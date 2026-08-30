@@ -1,0 +1,32 @@
+services:
+  # Linkdave must use the host network so YouTube stream URLs (IP-locked by
+  # yt-dlp on your machine) can be fetched. Bridge networking breaks playback.
+  linkdave:
+    image: ghcr.io/shi-gg/linkdave:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      LINKDAVE_PASSWORD: ${LINKDAVE_PASSWORD:?set LINKDAVE_PASSWORD in .env}
+      LINKDAVE_PORT: "8080"
+      LINKDAVE_SOURCE_HTTPS_ENABLED: "true"
+      LINKDAVE_SOURCE_HTTP_ENABLED: "true"
+      LINKDAVE_SOURCE_IP_ADDRESS_PUBLIC_ENABLED: "true"
+      LINKDAVE_SOURCE_IP_ADDRESS_PRIVATE_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Optional: run the bot in Docker too (local dev usually uses `make dev` instead).
+  bot:
+    profiles: ["docker"]
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    network_mode: host
+    environment:
+      LINKDAVE_URL: ws://127.0.0.1:8080
+    depends_on:
+      linkdave:
+        condition: service_healthy

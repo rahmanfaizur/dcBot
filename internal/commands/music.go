@@ -1,0 +1,303 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/faizur/mybot/internal/music"
+)
+
+// MusicCommands returns slash commands for voice playback.
+func MusicCommands(svc *music.Service, panel *PlayerPanel) []Command {
+	return []Command{
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "join",
+				Description: "Join your current voice channel.",
+			},
+			Handler: joinHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "leave",
+				Description: "Leave the voice channel.",
+			},
+			Handler: leaveHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "play",
+				Description: "Play a song from a link or search query.",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:         discordgo.ApplicationCommandOptionString,
+						Name:         "query",
+						Description:  "Search, or paste a YouTube/SoundCloud/Spotify link",
+						Required:     true,
+						Autocomplete: true,
+					},
+				},
+			},
+			Handler:      playHandler(svc, panel),
+			Autocomplete: playAutocomplete(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "skip",
+				Description: "Skip the current track.",
+			},
+			Handler: skipHandler(svc, panel),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "queue",
+				Description: "Show the current music queue.",
+			},
+			Handler: queueHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "pause",
+				Description: "Pause playback.",
+			},
+			Handler: pauseHandler(svc, panel),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "resume",
+				Description: "Resume playback.",
+			},
+			Handler: resumeHandler(svc, panel),
+		},
+	}
+}
+
+func joinHandler(svc *music.Service) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		channelID := music.MemberVoiceChannel(s, i)
+		if channelID == "" {
+			return respondEphemeral(s, i, "Join a voice channel first.")
+		}
+
+		if err := deferEphemeral(s, i); err != nil {
+			return err
+		}
+
+		joinCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+
+		if err := svc.Join(joinCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
+			_ = editDeferredEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+			return nil
+		}
+
+		return editDeferredEphemeralEmbed(s, i, joinSuccessEmbed())
+	}
+}
+
+func leaveHandler(svc *music.Service) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		if err := svc.Leave(ctx, s, botUserID(s), i.GuildID); err != nil {
+			return respondEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+		}
+		return respondEphemeralEmbed(s, i, leaveSuccessEmbed())
+	}
+}
+
+func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		query := optionString(i, "query")
+		if query == "" {
+			return respondEphemeral(s, i, "Provide a query or link.")
+		}
+
+		channelID := music.MemberVoiceChannel(s, i)
+		if channelID == "" {
+			return respondEphemeral(s, i, "Join a voice channel first.")
+		}
+
+		playCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+
+		requester := requesterName(i)
+		alreadyPlaying := svc.HasActivePlayback(i.GuildID)
+
+		if alreadyPlaying {
+			if err := deferEphemeral(s, i); err != nil {
+				return err
+			}
+			_ = editDeferredEphemeralEmbed(s, i, loadingEmbed())
+		} else {
+			if err := deferChannel(s, i); err != nil {
+				return err
+			}
+			_ = editDeferredEmbed(s, i, loadingEmbed())
+		}
+
+		if err := svc.EnsureVoice(playCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
+			if alreadyPlaying {
+				_ = editDeferredEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+			} else {
+				_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+			}
+			return nil
+		}
+
+		track, started, err := svc.Enqueue(playCtx, i.GuildID, query, requesterID(i), requester)
+		if err != nil {
+			info := playErrorEmbed(music.DescribePlaybackError(err))
+			if alreadyPlaying {
+				_ = editDeferredEphemeralEmbed(s, i, info)
+			} else {
+				_ = editDeferredEmbed(s, i, info)
+			}
+			return nil
+		}
+
+		if started {
+			return panel.PublishFromInteraction(s, i, track, requester)
+		}
+
+		panel.UpdateGuildPanel(s, i.GuildID)
+		return editDeferredEphemeralEmbed(s, i, queuedEmbed(track, svc.QueuePosition(i.GuildID), requester))
+	}
+}
+
+func skipHandler(svc *music.Service, panel *PlayerPanel) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		next, ok, err := svc.Skip(ctx, i.GuildID)
+		if err != nil {
+			return respondEphemeral(s, i, music.FriendlyControlError(err))
+		}
+		if !ok {
+			panel.UpdateGuildPanel(s, i.GuildID)
+			return respondEphemeralEmbed(s, i, statusEmbed("Skipped", "Queue is empty.", colorQueued))
+		}
+		panel.UpdateGuildPanel(s, i.GuildID)
+		return respondEphemeral(s, i, "Skipped to **"+next.Title+"**.")
+	}
+}
+
+func queueHandler(svc *music.Service) Handler {
+	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		return respondEphemeralEmbed(s, i, queueListEmbed(svc.Snapshot(i.GuildID)))
+	}
+}
+
+func pauseHandler(svc *music.Service, panel *PlayerPanel) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		if err := svc.Pause(ctx, i.GuildID); err != nil {
+			return respondEphemeral(s, i, music.FriendlyControlError(err))
+		}
+		panel.UpdateGuildPanel(s, i.GuildID)
+		return respondEphemeral(s, i, "Paused.")
+	}
+}
+
+func resumeHandler(svc *music.Service, panel *PlayerPanel) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		if err := svc.Resume(ctx, i.GuildID); err != nil {
+			return respondEphemeral(s, i, music.FriendlyControlError(err))
+		}
+		panel.UpdateGuildPanel(s, i.GuildID)
+		return respondEphemeral(s, i, "Resumed.")
+	}
+}
+
+func playAutocomplete(svc *music.Service) AutocompleteHandler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		query := focusedOptionString(i, "query")
+		if query == "" {
+			return respondAutocomplete(s, i, nil)
+		}
+
+		searchCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		defer cancel()
+
+		results, err := svc.Search(searchCtx, query)
+		if err != nil || len(results) == 0 {
+			return respondAutocomplete(s, i, nil)
+		}
+
+		choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(results))
+		for _, result := range results {
+			value := "search:" + result.Title
+			if len(value) > 100 {
+				value = value[:100]
+			}
+			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+				Name:  formatAutocompleteChoice(result.Title),
+				Value: value,
+			})
+		}
+		return respondAutocomplete(s, i, choices)
+	}
+}
+
+func formatAutocompleteChoice(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ""
+	}
+
+	label := title
+	for _, sep := range []string{" - ", " – ", " — ", " | "} {
+		if parts := strings.SplitN(title, sep, 2); len(parts) == 2 {
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			if len(left) > len(right) {
+				label = fmt.Sprintf("%s — %s", strings.ToUpper(music.CleanDisplayTitle(left)), right)
+			} else {
+				label = fmt.Sprintf("%s — %s", strings.ToUpper(music.CleanDisplayTitle(right)), left)
+			}
+			break
+		}
+	}
+
+	return truncateRunes(label, 100)
+}
+
+func focusedOptionString(i *discordgo.InteractionCreate, name string) string {
+	for _, opt := range i.ApplicationCommandData().Options {
+		if opt.Name == name && opt.Focused {
+			return opt.StringValue()
+		}
+	}
+	return ""
+}
+
+func optionString(i *discordgo.InteractionCreate, name string) string {
+	for _, opt := range i.ApplicationCommandData().Options {
+		if opt.Name == name {
+			return opt.StringValue()
+		}
+	}
+	return ""
+}
+
+func botUserID(s *discordgo.Session) string {
+	if s != nil && s.State.User != nil {
+		return s.State.User.ID
+	}
+	return ""
+}
+
+func requesterID(i *discordgo.InteractionCreate) string {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.ID
+	}
+	if i.User != nil {
+		return i.User.ID
+	}
+	return ""
+}
+
+func respondChannel(s *discordgo.Session, i *discordgo.InteractionCreate, content string) error {
+	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{Content: content},
+	})
+}

@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+testdata_dir = "testdata"
+
+[build]
+  bin = "./tmp/bot"
+  cmd = "go build -o ./tmp/bot ./cmd/bot"
+  include_ext = ["go", "env"]
+  exclude_dir = ["tmp", "bin", ".git"]
+  delay = 500
+
+[log]
+  time = false
