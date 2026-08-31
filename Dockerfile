@@ -13,7 +13,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bot ./cmd/bot
 # Runtime stage
 FROM alpine:3.20
 
-RUN apk add --no-cache ca-certificates tzdata yt-dlp ffmpeg
+RUN apk add --no-cache ca-certificates tzdata ffmpeg python3 py3-pip \
+    && pip3 install --break-system-packages --no-cache-dir yt-dlp \
+    && rm -rf /root/.cache
 WORKDIR /app
 
 COPY --from=builder /bot /app/bot

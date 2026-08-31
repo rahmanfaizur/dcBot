@@ -29,6 +29,9 @@ services:
     network_mode: host
     environment:
       LINKDAVE_URL: ws://127.0.0.1:8080
+      # Override host dev paths from .env (e.g. /snap/bin/yt-dlp does not exist in Alpine).
+      YTDLP_PATH: yt-dlp
+      FFMPEG_PATH: ffmpeg
     depends_on:
       linkdave:
         condition: service_healthy
