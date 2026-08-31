@@ -5,21 +5,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
 
 const ytdlpCacheDir = "/tmp/yt-dlp-cache"
 
-func ytdlpCommonArgs() []string {
-	return []string{
+// YTDLP holds yt-dlp binary settings shared by the resolver and stream proxy.
+type YTDLP struct {
+	Binary      string
+	CookiesFile string
+}
+
+func (y YTDLP) binary() string {
+	if strings.TrimSpace(y.Binary) == "" {
+		return "yt-dlp"
+	}
+	return y.Binary
+}
+
+func (y YTDLP) commonArgs() []string {
+	args := []string{
 		"--no-playlist",
 		"--no-warnings",
 		"--no-progress",
 		"--cache-dir", ytdlpCacheDir,
 		"--js-runtimes", "node:/usr/bin/node",
-		"--extractor-args", "youtube:player_client=web,mweb,android",
+		"--extractor-args", "youtube:player_client=android,web,mweb",
 	}
+	if y.CookiesFile != "" {
+		if _, err := os.Stat(y.CookiesFile); err == nil {
+			args = append(args, "--cookies", y.CookiesFile)
+		}
+	}
+	return args
 }
 
 func captureYTDLPOutput(cmd *exec.Cmd) (string, error) {
@@ -81,15 +101,15 @@ func (e *ytdlpExecError) Unwrap() error {
 }
 
 type ytdlpMetadata struct {
-	Title        string          `json:"title"`
-	FullTitle    string          `json:"fulltitle"`
-	Thumbnail    string          `json:"thumbnail"`
-	WebpageURL   string          `json:"webpage_url"`
-	OriginalURL  string          `json:"original_url"`
-	Duration     float64         `json:"duration"`
-	ID           string          `json:"id"`
-	DisplayID    string          `json:"display_id"`
-	Entries      []ytdlpMetadata `json:"entries"`
+	Title       string          `json:"title"`
+	FullTitle   string          `json:"fulltitle"`
+	Thumbnail   string          `json:"thumbnail"`
+	WebpageURL  string          `json:"webpage_url"`
+	OriginalURL string          `json:"original_url"`
+	Duration    float64         `json:"duration"`
+	ID          string          `json:"id"`
+	DisplayID   string          `json:"display_id"`
+	Entries     []ytdlpMetadata `json:"entries"`
 }
 
 func parseYTDLPMetadataJSON(output string) (title, thumbnail, pageURL string, durationSec int, err error) {
@@ -100,7 +120,11 @@ func parseYTDLPMetadataJSON(output string) (title, thumbnail, pageURL string, du
 
 	meta := root
 	if len(root.Entries) > 0 {
-		meta = root.Entries[0]
+		entry := root.Entries[0]
+		if entry.Title == "" && entry.FullTitle == "" && entry.DisplayID == "" && entry.ID == "" {
+			return "", "", "", 0, fmt.Errorf("yt-dlp returned an empty search result")
+		}
+		meta = entry
 	}
 
 	title = CleanDisplayTitle(meta.Title)
@@ -128,7 +152,7 @@ func youtubeWatchURL(meta ytdlpMetadata) string {
 	if id == "" {
 		id = meta.DisplayID
 	}
-	if id != "" {
+	if id != "" && !strings.Contains(id, " ") {
 		return "https://www.youtube.com/watch?v=" + id
 	}
 	return ""

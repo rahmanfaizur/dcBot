@@ -63,13 +63,22 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 
 		logger.Info("music enabled", "ytdlp", cfg.YTDLPPath, "ffmpeg", cfg.FFMPEGPath, "linkdave", cfg.LinkdaveURL)
 
-		proxy, err := music.NewStreamProxy(logger, cfg.YTDLPPath, cfg.FFMPEGPath)
+		ytdlp := music.YTDLP{Binary: cfg.YTDLPPath, CookiesFile: cfg.YTDLPCookiesFile}
+		if cfg.YTDLPCookiesFile != "" {
+			if _, err := os.Stat(cfg.YTDLPCookiesFile); err != nil {
+				logger.Warn("yt-dlp cookies file not found — YouTube may block cloud server IPs", "path", cfg.YTDLPCookiesFile)
+			} else {
+				logger.Info("yt-dlp cookies enabled", "path", cfg.YTDLPCookiesFile)
+			}
+		}
+
+		proxy, err := music.NewStreamProxy(logger, ytdlp, cfg.FFMPEGPath)
 		if err != nil {
 			return nil, fmt.Errorf("creating stream proxy: %w", err)
 		}
 		b.streamProxy = proxy
 		b.linkdave = ld
-		b.music = music.NewService(logger, ld, music.NewResolver(cfg.YTDLPPath, proxy))
+		b.music = music.NewService(logger, ld, music.NewResolver(ytdlp, proxy))
 		panel := commands.NewPlayerPanel(logger, b.music)
 		registry.SetComponentHandler(panel.HandleComponent)
 		for _, cmd := range commands.MusicCommands(b.music, panel) {

@@ -12,6 +12,8 @@ id_rsa.pub
 credentials.json
 secrets/
 cookies.txt
+secrets/*
+!secrets/.gitkeep
 
 # SQLite databases
 *.db

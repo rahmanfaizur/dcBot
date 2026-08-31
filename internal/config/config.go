@@ -16,9 +16,10 @@ type Config struct {
 	DiscordGuild string
 	LinkdaveURL  string
 	LinkdavePass string
-	YTDLPPath    string
-	FFMPEGPath   string
-	LogLevel     string
+	YTDLPPath       string
+	FFMPEGPath      string
+	YTDLPCookiesFile string
+	LogLevel        string
 }
 
 // MusicEnabled reports whether Linkdave music settings are present.
@@ -36,9 +37,10 @@ func Load() (Config, error) {
 		DiscordGuild: strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
 		LinkdaveURL:  strings.TrimSpace(os.Getenv("LINKDAVE_URL")),
 		LinkdavePass: strings.TrimSpace(os.Getenv("LINKDAVE_PASSWORD")),
-		YTDLPPath:    resolveYTDLPPath(strings.TrimSpace(os.Getenv("YTDLP_PATH"))),
-		FFMPEGPath:   resolveFFMPEGPath(strings.TrimSpace(os.Getenv("FFMPEG_PATH"))),
-		LogLevel:     strings.TrimSpace(os.Getenv("LOG_LEVEL")),
+		YTDLPPath:        resolveYTDLPPath(strings.TrimSpace(os.Getenv("YTDLP_PATH"))),
+		FFMPEGPath:       resolveFFMPEGPath(strings.TrimSpace(os.Getenv("FFMPEG_PATH"))),
+		YTDLPCookiesFile: strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")),
+		LogLevel:         strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 	}
 
 	if cfg.DiscordToken == "" {

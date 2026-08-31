@@ -39,19 +39,16 @@ type ResolvedTrack struct {
 
 // Resolver turns user queries and links into playable stream URLs.
 type Resolver struct {
-	ytdlpPath  string
+	ytdlp      YTDLP
 	proxy      *StreamProxy
 	httpClient *http.Client
 }
 
 // NewResolver creates a track resolver backed by yt-dlp for search and platform links.
-func NewResolver(ytdlpPath string, proxy *StreamProxy) *Resolver {
-	if ytdlpPath == "" {
-		ytdlpPath = "yt-dlp"
-	}
+func NewResolver(ytdlp YTDLP, proxy *StreamProxy) *Resolver {
 	return &Resolver{
-		ytdlpPath: ytdlpPath,
-		proxy:     proxy,
+		ytdlp: ytdlp,
+		proxy: proxy,
 		httpClient: &http.Client{
 			Timeout: 45 * time.Second,
 		},
@@ -266,13 +263,13 @@ func (r *Resolver) spotifyMetadata(ctx context.Context, spotifyURL string) (spot
 }
 
 func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, thumbnail, pageURL string, durationSec int, err error) {
-	args := append(ytdlpCommonArgs(),
+	args := append(r.ytdlp.commonArgs(),
 		"--socket-timeout", "30",
 		"--no-download",
 		"--dump-single-json",
 		target,
 	)
-	cmd := exec.CommandContext(ctx, r.ytdlpPath, args...)
+	cmd := exec.CommandContext(ctx, r.ytdlp.binary(), args...)
 
 	output, err := captureYTDLPOutput(cmd)
 	if err != nil {

@@ -32,6 +32,9 @@ func DescribePlaybackError(err error) PlaybackError {
 	case strings.Contains(lower, "not connected to voice"):
 		info.Title = "Not in voice"
 		info.Description = "I'm not in a voice channel — run `/join` or `/play` from a voice channel first."
+	case strings.Contains(lower, "sign in to confirm"), strings.Contains(lower, "not a bot"):
+		info.Title = "YouTube blocked this server"
+		info.Description = "YouTube is blocking the cloud server — the bot owner needs to add YouTube cookies on the VM, or try again later."
 	case strings.Contains(lower, "yt-dlp"):
 		info.Title = "Could not fetch audio"
 		info.Description = "I couldn't download that track — try a direct YouTube link, or ask the bot owner to check server logs."
@@ -111,6 +114,8 @@ func FriendlyError(err error) string {
 	switch {
 	case strings.Contains(lower, "timed out waiting for linkdave"):
 		return "voice connection timed out — run /leave then /play again (bot may have restarted)"
+	case strings.Contains(lower, "sign in to confirm"), strings.Contains(lower, "not a bot"):
+		return "youtube blocked the server — bot owner must add youtube cookies on the vm"
 	case strings.Contains(lower, "yt-dlp"):
 		return "could not fetch audio — try a YouTube link or check server logs"
 	case strings.Contains(lower, "client.timeout exceeded"):

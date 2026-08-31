@@ -34,6 +34,9 @@ services:
       FFMPEG_PATH: ffmpeg
       HOME: /tmp
       XDG_CACHE_HOME: /tmp
+      YTDLP_COOKIES_FILE: /run/secrets/youtube-cookies.txt
+    volumes:
+      - ./secrets:/run/secrets:ro
     depends_on:
       linkdave:
         condition: service_healthy

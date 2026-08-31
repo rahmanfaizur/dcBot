@@ -20,7 +20,7 @@ import (
 // sources return webm/m4a URLs from yt-dlp, but Linkdave only plays MP3 streams.
 type StreamProxy struct {
 	logger     *slog.Logger
-	ytdlpPath  string
+	ytdlp      YTDLP
 	ffmpegPath string
 	baseURL    string
 	server     *http.Server
@@ -30,12 +30,9 @@ type StreamProxy struct {
 }
 
 // NewStreamProxy starts a localhost HTTP server that transcodes yt-dlp output to MP3.
-func NewStreamProxy(logger *slog.Logger, ytdlpPath, ffmpegPath string) (*StreamProxy, error) {
+func NewStreamProxy(logger *slog.Logger, ytdlp YTDLP, ffmpegPath string) (*StreamProxy, error) {
 	if logger == nil {
 		logger = slog.Default()
-	}
-	if ytdlpPath == "" {
-		ytdlpPath = "yt-dlp"
 	}
 	if ffmpegPath == "" {
 		ffmpegPath = "ffmpeg"
@@ -43,7 +40,7 @@ func NewStreamProxy(logger *slog.Logger, ytdlpPath, ffmpegPath string) (*StreamP
 
 	proxy := &StreamProxy{
 		logger:     logger,
-		ytdlpPath:  ytdlpPath,
+		ytdlp:      ytdlp,
 		ffmpegPath: ffmpegPath,
 		sources:    make(map[string]string),
 	}
@@ -105,13 +102,13 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 
-	ytdlpArgs := append(ytdlpCommonArgs(),
+	ytdlpArgs := append(p.ytdlp.commonArgs(),
 		"--socket-timeout", "30",
 		"-f", "bestaudio/best",
 		"-o", "-",
 		target,
 	)
-	ytdlp := exec.CommandContext(r.Context(), p.ytdlpPath, ytdlpArgs...)
+	ytdlp := exec.CommandContext(r.Context(), p.ytdlp.binary(), ytdlpArgs...)
 
 	ytdlpStdout, err := ytdlp.StdoutPipe()
 	if err != nil {

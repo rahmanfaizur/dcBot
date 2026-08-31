@@ -27,6 +27,15 @@ func TestPlaybackErrorInfoVoice(t *testing.T) {
 	}
 }
 
+func TestPlaybackErrorInfoYouTubeBotBlock(t *testing.T) {
+	t.Parallel()
+
+	info := DescribePlaybackError(errors.New(`ERROR: Sign in to confirm you're not a bot`))
+	if info.Title != "YouTube blocked this server" {
+		t.Fatalf("title: %q", info.Title)
+	}
+}
+
 func TestFriendlyControlErrorSanitizesLinkdave(t *testing.T) {
 	t.Parallel()
 
