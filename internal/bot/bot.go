@@ -63,11 +63,13 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 
 		logger.Info("music enabled", "ytdlp", cfg.YTDLPPath, "ffmpeg", cfg.FFMPEGPath, "linkdave", cfg.LinkdaveURL)
 
-		ytdlp := music.YTDLP{Binary: cfg.YTDLPPath, CookiesFile: cfg.YTDLPCookiesFile}
+		ytdlp := music.YTDLP{Binary: cfg.YTDLPPath}
 		if cfg.YTDLPCookiesFile != "" {
-			if _, err := os.Stat(cfg.YTDLPCookiesFile); err != nil {
-				logger.Warn("yt-dlp cookies file not found — YouTube may block cloud server IPs", "path", cfg.YTDLPCookiesFile)
-			} else {
+			writableCookies, err := music.PrepareCookiesFile(cfg.YTDLPCookiesFile)
+			if err != nil {
+				logger.Warn("yt-dlp cookies unavailable", "path", cfg.YTDLPCookiesFile, "error", err)
+			} else if writableCookies != "" {
+				ytdlp.CookiesFile = writableCookies
 				logger.Info("yt-dlp cookies enabled", "path", cfg.YTDLPCookiesFile)
 			}
 		}

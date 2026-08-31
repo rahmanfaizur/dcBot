@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"os/exec"
 	"strings"
 )
@@ -25,6 +26,27 @@ func (y YTDLP) binary() string {
 	return y.Binary
 }
 
+// PrepareCookiesFile copies a read-only cookies file into a writable cache path.
+// yt-dlp updates cookies on exit; Docker mounts secrets read-only.
+func PrepareCookiesFile(readOnlyPath string) (string, error) {
+	readOnlyPath = strings.TrimSpace(readOnlyPath)
+	if readOnlyPath == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(readOnlyPath)
+	if err != nil {
+		return "", fmt.Errorf("reading cookies file: %w", err)
+	}
+	if err := os.MkdirAll(ytdlpCacheDir, 0o1777); err != nil {
+		return "", fmt.Errorf("creating yt-dlp cache dir: %w", err)
+	}
+	dst := filepath.Join(ytdlpCacheDir, "cookies.txt")
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		return "", fmt.Errorf("writing cookies cache: %w", err)
+	}
+	return dst, nil
+}
+
 func (y YTDLP) commonArgs() []string {
 	args := []string{
 		"--no-playlist",
@@ -36,7 +58,7 @@ func (y YTDLP) commonArgs() []string {
 	}
 	if y.CookiesFile != "" {
 		if _, err := os.Stat(y.CookiesFile); err == nil {
-			args = append(args, "--cookies", y.CookiesFile)
+			args = append(args, "--cookies", y.CookiesFile, "--no-write-cookies")
 		}
 	}
 	return args

@@ -1,6 +1,10 @@
 package music
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseYTDLPMetadataJSON_SearchResult(t *testing.T) {
 	const sample = `{
@@ -30,6 +34,27 @@ func TestParseYTDLPMetadataJSON_SearchResult(t *testing.T) {
 	}
 	if dur != 213 {
 		t.Fatalf("expected duration 213, got %d", dur)
+	}
+}
+
+func TestPrepareCookiesFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "readonly.txt")
+	if err := os.WriteFile(src, []byte("# Netscape HTTP Cookie File\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := PrepareCookiesFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == "" {
+		t.Fatal("expected writable cookies path")
+	}
+	if _, err := os.Stat(got); err != nil {
+		t.Fatalf("writable cookies missing: %v", err)
 	}
 }
 

@@ -104,7 +104,7 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	ytdlpArgs := append(p.ytdlp.commonArgs(),
 		"--socket-timeout", "30",
-		"-f", "bestaudio/best",
+		"-f", "bestaudio/best/b/worst",
 		"-o", "-",
 		target,
 	)

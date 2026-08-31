@@ -266,6 +266,7 @@ func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, t
 	args := append(r.ytdlp.commonArgs(),
 		"--socket-timeout", "30",
 		"--no-download",
+		"--ignore-no-formats-error",
 		"--dump-single-json",
 		target,
 	)
