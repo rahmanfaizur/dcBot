@@ -37,6 +37,7 @@ var youtubeStreamFormats = []string{
 type YTDLP struct {
 	Binary      string
 	CookiesFile string
+	Proxy       string
 }
 
 func (y YTDLP) binary() string {
@@ -68,13 +69,17 @@ func PrepareCookiesFile(readOnlyPath string) (string, error) {
 }
 
 func (y YTDLP) baseArgs() []string {
-	return []string{
+	args := []string{
 		"--no-playlist",
 		"--no-warnings",
 		"--no-progress",
 		"--cache-dir", ytdlpCacheDir,
 		"--js-runtimes", "node:/usr/bin/node",
 	}
+	if proxy := strings.TrimSpace(y.Proxy); proxy != "" {
+		args = append(args, "--proxy", proxy)
+	}
+	return args
 }
 
 func (y YTDLP) commonArgs() []string {

@@ -63,7 +63,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 
 		logger.Info("music enabled", "ytdlp", cfg.YTDLPPath, "ffmpeg", cfg.FFMPEGPath, "linkdave", cfg.LinkdaveURL)
 
-		ytdlp := music.YTDLP{Binary: cfg.YTDLPPath}
+		ytdlp := music.YTDLP{Binary: cfg.YTDLPPath, Proxy: cfg.YTDLPProxy}
+		if cfg.YTDLPProxy != "" {
+			logger.Info("yt-dlp proxy enabled", "proxy", cfg.YTDLPProxy)
+		}
 		if cfg.YTDLPCookiesFile != "" {
 			writableCookies, err := music.PrepareCookiesFile(cfg.YTDLPCookiesFile)
 			if err != nil {
