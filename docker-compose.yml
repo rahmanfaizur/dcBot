@@ -1,6 +1,10 @@
 services:
-  # Linkdave must use the host network so YouTube stream URLs (IP-locked by
-  # yt-dlp on your machine) can be fetched. Bridge networking breaks playback.
+  # Host network is required so Linkdave can send Discord voice UDP.
+  #
+  # WARP (optional): use the "warp" profile — Docker sidecar only, never warp-cli on the host.
+  #   docker compose --profile docker --profile warp up -d
+  #   YTDLP_PROXY=socks5://127.0.0.1:1080   (in .env)
+  # Full-tunnel warp-cli on the VM host breaks inbound SSH. This sidecar does not.
   linkdave:
     image: ghcr.io/shi-gg/linkdave:latest
     restart: unless-stopped
@@ -19,6 +23,26 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
+
+  # Cloudflare WARP as a local SOCKS proxy (opt-in via --profile warp).
+  # Traffic stays inside this container; the host default route is unchanged.
+  # Port is bound to 127.0.0.1 only so nothing off-box can use the proxy.
+  warp:
+    profiles: ["warp"]
+    image: caomingjun/warp
+    container_name: mybot-warp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1080:1080"
+    environment:
+      WARP_SLEEP: "2"
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - warp-data:/var/lib/cloudflare-warp
 
   # Optional: run the bot in Docker too (local dev usually uses `make dev` instead).
   bot:
@@ -43,3 +67,6 @@ services:
     depends_on:
       linkdave:
         condition: service_healthy
+
+volumes:
+  warp-data:

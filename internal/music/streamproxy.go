@@ -102,24 +102,22 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 
-	mediaURL, err := p.ytdlp.ResolveStreamURL(r.Context(), target)
+	audio, err := p.ytdlp.OpenAudioStream(r.Context(), target)
 	if err != nil {
-		p.logger.Warn("yt-dlp stream URL lookup failed", "error", err, "target", target)
+		p.logger.Warn("yt-dlp audio stream failed", "error", err, "target", target)
 		http.Error(w, "stream setup failed", http.StatusBadGateway)
 		return
 	}
+	defer audio.Close()
 
 	ffmpeg := exec.CommandContext(r.Context(), p.ffmpegPath,
-		"-nostdin",
 		"-loglevel", "error",
-		"-reconnect", "1",
-		"-reconnect_streamed", "1",
-		"-reconnect_delay_max", "5",
-		"-i", mediaURL,
+		"-i", "pipe:0",
 		"-f", "mp3",
 		"-ab", "128k",
 		"pipe:1",
 	)
+	ffmpeg.Stdin = audio
 	var ffmpegErr bytes.Buffer
 	ffmpeg.Stderr = &ffmpegErr
 

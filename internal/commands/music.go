@@ -60,6 +60,13 @@ func MusicCommands(svc *music.Service, panel *PlayerPanel) []Command {
 		},
 		{
 			Definition: &discordgo.ApplicationCommand{
+				Name:        "nowplaying",
+				Description: "Show the track that is currently playing.",
+			},
+			Handler: nowPlayingHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
 				Name:        "pause",
 				Description: "Pause playback.",
 			},
@@ -82,7 +89,7 @@ func joinHandler(svc *music.Service) Handler {
 			return respondEphemeral(s, i, "Join a voice channel first.")
 		}
 
-		if err := deferEphemeral(s, i); err != nil {
+		if err := deferChannel(s, i); err != nil {
 			return err
 		}
 
@@ -90,20 +97,20 @@ func joinHandler(svc *music.Service) Handler {
 		defer cancel()
 
 		if err := svc.Join(joinCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
-			_ = editDeferredEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+			_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
 			return nil
 		}
 
-		return editDeferredEphemeralEmbed(s, i, joinSuccessEmbed())
+		return editDeferredEmbed(s, i, joinSuccessEmbed())
 	}
 }
 
 func leaveHandler(svc *music.Service) Handler {
 	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
 		if err := svc.Leave(ctx, s, botUserID(s), i.GuildID); err != nil {
-			return respondEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
+			return respondChannelEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
 		}
-		return respondEphemeralEmbed(s, i, leaveSuccessEmbed())
+		return respondChannelEmbed(s, i, leaveSuccessEmbed())
 	}
 }
 
@@ -123,37 +130,20 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 		defer cancel()
 
 		requester := requesterName(i)
-		alreadyPlaying := svc.HasActivePlayback(i.GuildID)
 
-		if alreadyPlaying {
-			if err := deferEphemeral(s, i); err != nil {
-				return err
-			}
-			_ = editDeferredEphemeralEmbed(s, i, loadingEmbed())
-		} else {
-			if err := deferChannel(s, i); err != nil {
-				return err
-			}
-			_ = editDeferredEmbed(s, i, loadingEmbed())
+		if err := deferChannel(s, i); err != nil {
+			return err
 		}
+		_ = editDeferredEmbed(s, i, loadingEmbed())
 
 		if err := svc.EnsureVoice(playCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
-			if alreadyPlaying {
-				_ = editDeferredEphemeralEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
-			} else {
-				_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
-			}
+			_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
 			return nil
 		}
 
 		track, started, err := svc.Enqueue(playCtx, i.GuildID, query, requesterID(i), requester)
 		if err != nil {
-			info := playErrorEmbed(music.DescribePlaybackError(err))
-			if alreadyPlaying {
-				_ = editDeferredEphemeralEmbed(s, i, info)
-			} else {
-				_ = editDeferredEmbed(s, i, info)
-			}
+			_ = editDeferredEmbed(s, i, playErrorEmbed(music.DescribePlaybackError(err)))
 			return nil
 		}
 
@@ -162,7 +152,7 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 		}
 
 		panel.UpdateGuildPanel(s, i.GuildID)
-		return editDeferredEphemeralEmbed(s, i, queuedEmbed(track, svc.QueuePosition(i.GuildID), requester))
+		return editDeferredEmbed(s, i, queuedEmbed(track, svc.QueuePosition(i.GuildID), requester))
 	}
 }
 
@@ -172,18 +162,28 @@ func skipHandler(svc *music.Service, panel *PlayerPanel) Handler {
 		if err != nil {
 			return respondEphemeral(s, i, music.FriendlyControlError(err))
 		}
-		if !ok {
-			panel.UpdateGuildPanel(s, i.GuildID)
-			return respondEphemeralEmbed(s, i, statusEmbed("Skipped", "Queue is empty.", colorQueued))
-		}
 		panel.UpdateGuildPanel(s, i.GuildID)
-		return respondEphemeral(s, i, "Skipped to **"+next.Title+"**.")
+		if !ok {
+			return respondChannelEmbed(s, i, statusEmbed("Skipped", "Queue is empty.", colorQueued))
+		}
+		return respondChannelEmbed(s, i, statusEmbed("Skipped", "Now playing **"+next.Title+"**", colorQueued))
 	}
 }
 
 func queueHandler(svc *music.Service) Handler {
 	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
-		return respondEphemeralEmbed(s, i, queueListEmbed(svc.Snapshot(i.GuildID)))
+		return respondChannelEmbed(s, i, queueListEmbed(svc.Snapshot(i.GuildID)))
+	}
+}
+
+func nowPlayingHandler(svc *music.Service) Handler {
+	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		state := svc.PlaybackState(i.GuildID)
+		if state.Now == nil {
+			return respondChannelEmbed(s, i, idleEmbed())
+		}
+		track := queueItemToTrack(*state.Now)
+		return respondChannelEmbed(s, i, nowPlayingEmbed(track, state.Now.RequesterName, state))
 	}
 }
 
@@ -193,7 +193,7 @@ func pauseHandler(svc *music.Service, panel *PlayerPanel) Handler {
 			return respondEphemeral(s, i, music.FriendlyControlError(err))
 		}
 		panel.UpdateGuildPanel(s, i.GuildID)
-		return respondEphemeral(s, i, "Paused.")
+		return respondChannelEmbed(s, i, statusEmbed("Paused", "Use `/resume` to continue.", colorPaused))
 	}
 }
 
@@ -203,7 +203,7 @@ func resumeHandler(svc *music.Service, panel *PlayerPanel) Handler {
 			return respondEphemeral(s, i, music.FriendlyControlError(err))
 		}
 		panel.UpdateGuildPanel(s, i.GuildID)
-		return respondEphemeral(s, i, "Resumed.")
+		return respondChannelEmbed(s, i, statusEmbed("Resumed", "Playback continued.", colorNowPlaying))
 	}
 }
 

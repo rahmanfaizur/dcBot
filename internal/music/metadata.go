@@ -111,4 +111,3 @@ func isYTDLPNoise(line string) bool {
 		return false
 	}
 }
-

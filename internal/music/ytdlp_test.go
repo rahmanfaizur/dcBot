@@ -102,6 +102,24 @@ func TestStreamArgVariantsSkipsYouTubeClientSweep(t *testing.T) {
 	}
 }
 
+// Each variant must end with the target so yt-dlp writes media to stdout.
+func TestStreamArgVariantsOutputFlags(t *testing.T) {
+	variants := YTDLP{}.streamArgVariants("ytsearch1:hello")
+	if len(variants) == 0 {
+		t.Fatal("expected at least one variant")
+	}
+
+	for _, args := range variants {
+		if got := args[len(args)-1]; got != "ytsearch1:hello" {
+			t.Fatalf("variant should end with the target, got %q in %v", got, args)
+		}
+		tail := strings.Join(args[len(args)-3:], " ")
+		if tail != "-o - ytsearch1:hello" {
+			t.Fatalf("variant should write to stdout, got %q", tail)
+		}
+	}
+}
+
 func TestParseFlatDuration(t *testing.T) {
 	tests := []struct {
 		value string
@@ -123,10 +141,20 @@ func TestParseFlatDuration(t *testing.T) {
 	}
 }
 
-func TestFirstHTTPURL(t *testing.T) {
-	got := firstHTTPURL("noise\nhttps://example.com/audio.webm\n")
-	if got != "https://example.com/audio.webm" {
-		t.Fatalf("got %q", got)
+func TestStreamArgVariantsIncludeProxy(t *testing.T) {
+	variants := YTDLP{Proxy: "socks5://127.0.0.1:1080"}.streamArgVariants("ytsearch1:hello")
+	if len(variants) == 0 {
+		t.Fatal("expected variants")
+	}
+	found := false
+	for i, arg := range variants[0] {
+		if arg == "--proxy" && i+1 < len(variants[0]) && variants[0][i+1] == "socks5://127.0.0.1:1080" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected --proxy socks5://127.0.0.1:1080 in %v", variants[0])
 	}
 }
 

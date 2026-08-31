@@ -12,10 +12,10 @@ import (
 
 // Config holds all environment-driven settings for the bot process.
 type Config struct {
-	DiscordToken string
-	DiscordGuild string
-	LinkdaveURL  string
-	LinkdavePass string
+	DiscordToken     string
+	DiscordGuild     string
+	LinkdaveURL      string
+	LinkdavePass     string
 	YTDLPPath        string
 	FFMPEGPath       string
 	YTDLPCookiesFile string
@@ -34,10 +34,10 @@ func Load() (Config, error) {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		DiscordToken: strings.TrimSpace(os.Getenv("DISCORD_TOKEN")),
-		DiscordGuild: strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
-		LinkdaveURL:  strings.TrimSpace(os.Getenv("LINKDAVE_URL")),
-		LinkdavePass: strings.TrimSpace(os.Getenv("LINKDAVE_PASSWORD")),
+		DiscordToken:     strings.TrimSpace(os.Getenv("DISCORD_TOKEN")),
+		DiscordGuild:     strings.TrimSpace(os.Getenv("DISCORD_GUILD_ID")),
+		LinkdaveURL:      strings.TrimSpace(os.Getenv("LINKDAVE_URL")),
+		LinkdavePass:     strings.TrimSpace(os.Getenv("LINKDAVE_PASSWORD")),
 		YTDLPPath:        resolveYTDLPPath(strings.TrimSpace(os.Getenv("YTDLP_PATH"))),
 		FFMPEGPath:       resolveFFMPEGPath(strings.TrimSpace(os.Getenv("FFMPEG_PATH"))),
 		YTDLPCookiesFile: strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")),

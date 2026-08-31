@@ -1,6 +1,7 @@
 package music
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,6 +15,9 @@ import (
 )
 
 const ytdlpCacheDir = "/tmp/yt-dlp-cache"
+
+// audioStreamBufferBytes smooths yt-dlp's output before it reaches ffmpeg.
+const audioStreamBufferBytes = 256 * 1024
 
 // An empty entry means "send no player_client override" so yt-dlp uses its own
 // current defaults, which outperform any hand-picked list. tv_embedded was
@@ -82,6 +86,7 @@ func (y YTDLP) commonFlags() []string {
 	args := []string{
 		"--no-warnings",
 		"--no-progress",
+		"--force-ipv4",
 		"--cache-dir", ytdlpCacheDir,
 		"--js-runtimes", "node:/usr/bin/node",
 	}
@@ -104,37 +109,83 @@ func (y YTDLP) argsForYouTubeClients(clients string) []string {
 	return args
 }
 
-// ResolveStreamURL finds a direct media URL for ffmpeg, retrying across client
-// and format combinations until one yields a playable URL.
-func (y YTDLP) ResolveStreamURL(ctx context.Context, target string) (string, error) {
+// OpenAudioStream starts yt-dlp writing raw media bytes to its stdout, retrying
+// across client and format combinations until one actually produces data.
+//
+// Piping the bytes through yt-dlp rather than handing ffmpeg a media URL keeps
+// the whole download on yt-dlp's own connection. That matters because YouTube
+// signs media URLs against the requesting IP, so a URL fetched through a proxy
+// returns 403 when ffmpeg downloads it directly. It also avoids URLs expiring
+// between lookup and playback.
+func (y YTDLP) OpenAudioStream(ctx context.Context, target string) (io.ReadCloser, error) {
 	var lastErr error
 	for _, args := range y.streamArgVariants(target) {
-		cmd := exec.CommandContext(ctx, y.binary(), args...)
-		output, err := captureYTDLPOutput(cmd)
+		stream, err := y.startAudioStream(ctx, args)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if mediaURL := firstHTTPURL(output); mediaURL != "" {
-			return mediaURL, nil
-		}
+		return stream, nil
 	}
 	if lastErr == nil {
-		lastErr = fmt.Errorf("yt-dlp returned no stream URL")
+		lastErr = fmt.Errorf("yt-dlp produced no audio")
 	}
-	return "", fmt.Errorf("yt-dlp stream URL lookup failed: %w", lastErr)
+	return nil, fmt.Errorf("yt-dlp audio stream failed: %w", lastErr)
 }
 
-// streamArgVariants builds the attempts for a target. Only YouTube needs the
-// client sweep; other extractors resolve on the first try, so retrying them
-// with YouTube-specific flags would just waste time.
+// startAudioStream launches one attempt and waits for the first byte, so a
+// client that yields nothing is discarded before ffmpeg is involved.
+func (y YTDLP) startAudioStream(ctx context.Context, args []string) (io.ReadCloser, error) {
+	cmd := exec.CommandContext(ctx, y.binary(), args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	buffered := bufio.NewReaderSize(stdout, audioStreamBufferBytes)
+	if _, err := buffered.Peek(1); err != nil {
+		_ = killProcess(cmd)
+		if detail := strings.TrimSpace(stderr.String()); detail != "" {
+			return nil, fmt.Errorf("no audio from yt-dlp: %s", detail)
+		}
+		return nil, fmt.Errorf("no audio from yt-dlp: %w", err)
+	}
+
+	return &ytdlpAudioStream{cmd: cmd, reader: buffered}, nil
+}
+
+type ytdlpAudioStream struct {
+	cmd    *exec.Cmd
+	reader io.Reader
+}
+
+func (s *ytdlpAudioStream) Read(p []byte) (int, error) { return s.reader.Read(p) }
+
+func (s *ytdlpAudioStream) Close() error { return killProcess(s.cmd) }
+
+func killProcess(cmd *exec.Cmd) error {
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	return cmd.Wait()
+}
+
+// streamArgVariants builds the attempts for a target, each writing media to
+// stdout. Only YouTube needs the client sweep; other extractors resolve on the
+// first try, so retrying them with YouTube flags would just waste time.
 func (y YTDLP) streamArgVariants(target string) [][]string {
 	variants := make([][]string, 0, len(youtubeStreamClients)*len(youtubeStreamFormats))
 	add := func(base []string, format string) {
 		variants = append(variants, append(base,
 			"--socket-timeout", "30",
 			"-f", format,
-			"--get-url",
+			"-o", "-",
 			target,
 		))
 	}
@@ -237,16 +288,6 @@ func isYouTubeTarget(target string) bool {
 	return strings.HasPrefix(lower, "ytsearch") ||
 		strings.Contains(lower, "youtube.com/") ||
 		strings.Contains(lower, "youtu.be/")
-}
-
-func firstHTTPURL(output string) string {
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
-			return line
-		}
-	}
-	return ""
 }
 
 func captureYTDLPOutput(cmd *exec.Cmd) (string, error) {

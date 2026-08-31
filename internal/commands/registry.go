@@ -24,11 +24,11 @@ type Command struct {
 
 // Registry maps command names to their handlers.
 type Registry struct {
-	logger             *slog.Logger
-	commands           []Command
-	byName             map[string]Handler
-	byAutocomplete     map[string]AutocompleteHandler
-	componentHandler   ComponentHandler
+	logger           *slog.Logger
+	commands         []Command
+	byName           map[string]Handler
+	byAutocomplete   map[string]AutocompleteHandler
+	componentHandler ComponentHandler
 }
 
 // ComponentHandler processes message component interactions such as buttons.
@@ -146,16 +146,6 @@ func respondAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate, c
 	})
 }
 
-// deferEphemeral acknowledges a slow command with a private "thinking" state.
-func deferEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate) error {
-	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags: discordgo.MessageFlagsEphemeral,
-		},
-	})
-}
-
 // deferChannel acknowledges a slow command so Discord does not expire the interaction.
 func deferChannel(s *discordgo.Session, i *discordgo.InteractionCreate) error {
 	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -173,14 +163,6 @@ func followupChannel(s *discordgo.Session, i *discordgo.InteractionCreate, conte
 func editDeferredEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate, content string) error {
 	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Content: &content,
-	})
-	return err
-}
-
-func editDeferredEphemeralEmbed(s *discordgo.Session, i *discordgo.InteractionCreate, embed *discordgo.MessageEmbed) error {
-	embeds := []*discordgo.MessageEmbed{embed}
-	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &embeds,
 	})
 	return err
 }

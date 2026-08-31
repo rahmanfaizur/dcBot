@@ -39,9 +39,9 @@ type Service struct {
 	listener   func(PlaybackEvent)
 	session    *discordgo.Session
 
-	clockMu        sync.Mutex
-	playbackStart  map[string]time.Time
-	frozenElapsed  map[string]int
+	clockMu       sync.Mutex
+	playbackStart map[string]time.Time
+	frozenElapsed map[string]int
 }
 
 // NewService creates a music service.
