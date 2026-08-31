@@ -40,6 +40,8 @@ func NewPlayerPanel(logger *slog.Logger, svc *music.Service) *PlayerPanel {
 
 // PublishFromInteraction sets the now-playing panel from a slash command response.
 func (p *PlayerPanel) PublishFromInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, track music.ResolvedTrack, requester string) error {
+	p.stripOldPanelButtons(s, i.GuildID)
+
 	state := p.svc.PlaybackState(i.GuildID)
 	embed := nowPlayingEmbed(track, requester, state)
 	components := playerControlsForGuild(i.GuildID, state)
@@ -90,6 +92,10 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 		err = p.svc.Resume(opCtx, i.GuildID)
 	case "skip":
 		_, _, err = p.svc.Skip(opCtx, i.GuildID)
+		if err != nil {
+			return p.handleControlError(s, i, i.GuildID, err)
+		}
+		return p.acknowledgeControl(s, i)
 	case "stop":
 		err = p.svc.Leave(opCtx, s, botUserID(s), i.GuildID)
 	default:
@@ -143,22 +149,28 @@ func (p *PlayerPanel) onPlaybackEvent(event music.PlaybackEvent) {
 		return
 	}
 
+	state := p.svc.PlaybackState(event.GuildID)
+	if state.Now == nil {
+		ref, ok := p.getRef(event.GuildID)
+		if ok {
+			_ = p.editMessage(event.Session, ref, idleEmbed(), nil)
+		}
+		p.clearRef(event.GuildID)
+		return
+	}
+
+	if event.RefreshOnly {
+		p.UpdateGuildPanel(event.Session, event.GuildID)
+		return
+	}
+
 	ref, ok := p.getRef(event.GuildID)
 	if !ok {
 		return
 	}
 
-	state := p.svc.PlaybackState(event.GuildID)
-	if state.Now == nil {
-		_ = p.editMessage(event.Session, ref, idleEmbed(), nil)
-		p.clearRef(event.GuildID)
-		return
-	}
-
 	track := queueItemToTrack(*state.Now)
-	embed := nowPlayingEmbed(track, state.Now.RequesterName, state)
-	components := playerControlsForGuild(event.GuildID, state)
-	_ = p.editMessage(event.Session, ref, embed, components)
+	_ = p.publishFreshPanel(event.Session, event.GuildID, ref.ChannelID, track, state.Now.RequesterName, state)
 }
 
 func (p *PlayerPanel) refreshPanel(s *discordgo.Session, i *discordgo.InteractionCreate, guildID string) error {
@@ -198,6 +210,38 @@ func (p *PlayerPanel) editMessage(s *discordgo.Session, ref panelRef, embed *dis
 		Components: &components,
 	})
 	return err
+}
+
+func (p *PlayerPanel) stripOldPanelButtons(s *discordgo.Session, guildID string) {
+	ref, ok := p.getRef(guildID)
+	if !ok {
+		return
+	}
+	empty := []discordgo.MessageComponent{}
+	if _, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		Channel:    ref.ChannelID,
+		ID:         ref.MessageID,
+		Components: &empty,
+	}); err != nil {
+		p.logger.Warn("stripping old panel buttons", "guild_id", guildID, "error", err)
+	}
+}
+
+func (p *PlayerPanel) publishFreshPanel(s *discordgo.Session, guildID, channelID string, track music.ResolvedTrack, requester string, state music.PlaybackState) error {
+	p.stripOldPanelButtons(s, guildID)
+
+	embed := nowPlayingEmbed(track, requester, state)
+	components := playerControlsForGuild(guildID, state)
+	msg, err := s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		Embeds:     []*discordgo.MessageEmbed{embed},
+		Components: components,
+	})
+	if err != nil {
+		p.logger.Warn("posting fresh player panel", "guild_id", guildID, "error", err)
+		return err
+	}
+	p.setRef(guildID, channelID, msg.ID)
+	return nil
 }
 
 func (p *PlayerPanel) setRef(guildID, channelID, messageID string) {
@@ -241,6 +285,14 @@ func respondComponentError(s *discordgo.Session, i *discordgo.InteractionCreate,
 	content := msg
 	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Content: &content,
+	})
+	return err
+}
+
+func (p *PlayerPanel) acknowledgeControl(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	empty := []discordgo.MessageComponent{}
+	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Components: &empty,
 	})
 	return err
 }

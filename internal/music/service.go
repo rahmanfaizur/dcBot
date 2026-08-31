@@ -14,8 +14,9 @@ import (
 
 // PlaybackEvent notifies UI layers about queue and transport changes.
 type PlaybackEvent struct {
-	GuildID string
-	Session *discordgo.Session
+	GuildID      string
+	Session      *discordgo.Session
+	RefreshOnly  bool // true for pause/resume; false when the active track changes or stops
 }
 
 // PlaybackState is a snapshot of the current guild player for UI rendering.
@@ -157,7 +158,7 @@ func (s *Service) isPlaybackPaused(guildID string) bool {
 	return ok
 }
 
-func (s *Service) emitPlayback(guildID string) {
+func (s *Service) emitPlayback(guildID string, refreshOnly bool) {
 	s.listenerMu.Lock()
 	fn := s.listener
 	session := s.session
@@ -165,7 +166,7 @@ func (s *Service) emitPlayback(guildID string) {
 	if fn == nil {
 		return
 	}
-	fn(PlaybackEvent{GuildID: guildID, Session: session})
+	fn(PlaybackEvent{GuildID: guildID, Session: session, RefreshOnly: refreshOnly})
 }
 func (s *Service) Join(ctx context.Context, session *discordgo.Session, botUserID, guildID, channelID string) error {
 	if channelID == "" {
@@ -186,7 +187,7 @@ func (s *Service) Leave(ctx context.Context, session *discordgo.Session, botUser
 			return err
 		}
 	}
-	s.emitPlayback(guildID)
+	s.emitPlayback(guildID, false)
 	return nil
 }
 
@@ -233,8 +234,6 @@ func (s *Service) Enqueue(ctx context.Context, guildID, query, requesterID, requ
 		return ResolvedTrack{}, false, err
 	}
 	s.markPlaybackStart(guildID)
-
-	s.emitPlayback(guildID)
 	return track, true, nil
 }
 
@@ -294,7 +293,7 @@ func (s *Service) Skip(ctx context.Context, guildID string) (QueueItem, bool, er
 		}
 		queue.Clear()
 		s.clearPlaybackClock(guildID)
-		s.emitPlayback(guildID)
+		s.emitPlayback(guildID, false)
 		return QueueItem{}, false, nil
 	}
 
@@ -302,7 +301,7 @@ func (s *Service) Skip(ctx context.Context, guildID string) (QueueItem, bool, er
 		return QueueItem{}, false, err
 	}
 	s.markPlaybackStart(guildID)
-	s.emitPlayback(guildID)
+	s.emitPlayback(guildID, false)
 	return next, true, nil
 }
 
@@ -312,7 +311,7 @@ func (s *Service) Pause(ctx context.Context, guildID string) error {
 		return err
 	}
 	s.markPlaybackPause(guildID)
-	s.emitPlayback(guildID)
+	s.emitPlayback(guildID, true)
 	return nil
 }
 
@@ -322,7 +321,7 @@ func (s *Service) Resume(ctx context.Context, guildID string) error {
 		return err
 	}
 	s.markPlaybackResume(guildID)
-	s.emitPlayback(guildID)
+	s.emitPlayback(guildID, true)
 	return nil
 }
 
@@ -468,6 +467,6 @@ func (s *Service) onTrackEnd(guildID, reason string) {
 		s.clearPlaybackClock(guildID)
 	} else {
 		s.markPlaybackStart(guildID)
-		s.emitPlayback(guildID)
+		s.emitPlayback(guildID, false)
 	}
 }
