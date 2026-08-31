@@ -6,17 +6,19 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      LINKDAVE_PASSWORD: ${LINKDAVE_PASSWORD:?set LINKDAVE_PASSWORD in .env}
+      LINKDAVE_PASSWORD: ${LINKDAVE_PASSWORD:?LINKDAVE_PASSWORD required in .env}
       LINKDAVE_PORT: "8080"
       LINKDAVE_SOURCE_HTTPS_ENABLED: "true"
       LINKDAVE_SOURCE_HTTP_ENABLED: "true"
       LINKDAVE_SOURCE_IP_ADDRESS_PUBLIC_ENABLED: "true"
       LINKDAVE_SOURCE_IP_ADDRESS_PRIVATE_ENABLED: "true"
+    # Linkdave is a distroless image — no wget/curl/shell. Use its built-in binary.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 10s
-      timeout: 3s
-      retries: 5
+      timeout: 5s
+      retries: 12
+      start_period: 40s
 
   # Optional: run the bot in Docker too (local dev usually uses `make dev` instead).
   bot:
