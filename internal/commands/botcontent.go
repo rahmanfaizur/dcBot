@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/faizur/mybot/internal/music"
 )
 
 var loadingLines = []string{
@@ -29,27 +31,12 @@ var preparingLines = []string{
 	"Buffering the good part…",
 }
 
-var botFacts = []string{
-	"I run 24/7 on an Azure VM in Korea.",
-	"YouTube traffic goes through Cloudflare WARP so datacenter IPs don't get blocked.",
-	"Spotify links are resolved via YouTube under the hood.",
-	"Built with Go, yt-dlp, ffmpeg, and Linkdave.",
-	"Only yt-dlp uses the WARP proxy — SSH and Discord stay on normal networking.",
-	"Autocomplete shows real YouTube search results with durations.",
-	"I stream audio through a pipe so proxy IPs don't break playback.",
-	"You can paste YouTube, Spotify, or SoundCloud links — or just search.",
-}
-
 func randomLoadingLine() string {
 	return loadingLines[rand.IntN(len(loadingLines))]
 }
 
 func randomPreparingLine() string {
 	return preparingLines[rand.IntN(len(preparingLines))]
-}
-
-func randomBotFact() string {
-	return botFacts[rand.IntN(len(botFacts))]
 }
 
 func formatLoadingQuery(query string) string {
@@ -76,10 +63,23 @@ func preparingDescription(query string) string {
 	return fmt.Sprintf("**%s**\n\n%s", label, randomPreparingLine())
 }
 
-func funFactEmbed() *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+func songFactEmbed(ctx context.Context, track music.ResolvedTrack, requester string) *discordgo.MessageEmbed {
+	fact := music.SongFact(ctx, track.Artist, track.Title, track.DurationSec, requester)
+	embed := &discordgo.MessageEmbed{
 		Color:       colorQueueList,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FUN FACT"},
-		Description: randomBotFact(),
+		Description: fact,
 	}
+	if subtitle := songFactSubtitle(track); subtitle != "" {
+		embed.Footer = &discordgo.MessageEmbedFooter{Text: subtitle}
+	}
+	return embed
+}
+
+func songFactSubtitle(track music.ResolvedTrack) string {
+	title := displaySongTitle(track)
+	if track.Artist != "" && title != "" {
+		return track.Artist + " · " + title
+	}
+	return title
 }

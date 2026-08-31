@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -50,8 +51,8 @@ func TestLoadingEmbed(t *testing.T) {
 	if !strings.Contains(embed.Description, "few seconds") {
 		t.Fatalf("should mention wait time: %q", embed.Description)
 	}
-	if embed.Footer == nil || embed.Footer.Text == "" {
-		t.Fatalf("expected footer fun fact")
+	if embed.Footer != nil {
+		t.Fatalf("loading embed should not include footer trivia: %q", embed.Footer.Text)
 	}
 	if strings.ContainsAny(embed.Description, "▁▃▅▇") {
 		t.Fatalf("loader should be text-only: %q", embed.Description)
@@ -81,15 +82,25 @@ func TestFormatLoadingQuery(t *testing.T) {
 	}
 }
 
-func TestFunFactEmbed(t *testing.T) {
+func TestSongFactEmbed(t *testing.T) {
 	t.Parallel()
 
-	embed := funFactEmbed()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	embed := songFactEmbed(ctx, music.ResolvedTrack{
+		Title:       "Magnetic",
+		Artist:      "ILLIT",
+		DurationSec: 161,
+	}, "faizur")
 	if embed.Author.Name != "FUN FACT" {
 		t.Fatalf("author: got %q", embed.Author.Name)
 	}
 	if embed.Description == "" {
 		t.Fatalf("expected fact text")
+	}
+	if !strings.Contains(embed.Footer.Text, "ILLIT") {
+		t.Fatalf("footer: %q", embed.Footer.Text)
 	}
 }
 

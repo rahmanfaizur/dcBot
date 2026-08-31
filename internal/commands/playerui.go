@@ -23,15 +23,11 @@ const (
 )
 
 func loadingEmbed(query string) *discordgo.MessageEmbed {
-	embed := &discordgo.MessageEmbed{
+	return &discordgo.MessageEmbed{
 		Color:       colorLoading,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FINDING TRACK"},
 		Description: loadingDescription(query),
 	}
-	if fact := randomBotFact(); fact != "" {
-		embed.Footer = &discordgo.MessageEmbedFooter{Text: fact}
-	}
-	return embed
 }
 
 func preparingEmbed(query string) *discordgo.MessageEmbed {

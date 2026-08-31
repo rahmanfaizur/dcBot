@@ -72,7 +72,17 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 	case "queue":
 		return respondEphemeralEmbed(s, i, queueListEmbed(p.svc.Snapshot(i.GuildID)))
 	case "fact":
-		return respondEphemeralEmbed(s, i, funFactEmbed())
+		state := p.svc.PlaybackState(i.GuildID)
+		if state.Now == nil {
+			return respondEphemeral(s, i, "Nothing is playing right now.")
+		}
+		if err := deferEphemeral(s, i); err != nil {
+			return err
+		}
+		factCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+		track := queueItemToTrack(*state.Now)
+		return editDeferredEmbed(s, i, songFactEmbed(factCtx, track, state.Now.RequesterName))
 	}
 
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

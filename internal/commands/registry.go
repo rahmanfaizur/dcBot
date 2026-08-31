@@ -153,6 +153,15 @@ func deferChannel(s *discordgo.Session, i *discordgo.InteractionCreate) error {
 	})
 }
 
+func deferEphemeral(s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
+	})
+}
+
 func followupChannel(s *discordgo.Session, i *discordgo.InteractionCreate, content string) error {
 	_, err := s.FollowupMessageCreate(i.Interaction, false, &discordgo.WebhookParams{
 		Content: content,
