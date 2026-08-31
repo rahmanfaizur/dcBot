@@ -58,7 +58,7 @@ func (y YTDLP) commonArgs() []string {
 	}
 	if y.CookiesFile != "" {
 		if _, err := os.Stat(y.CookiesFile); err == nil {
-			args = append(args, "--cookies", y.CookiesFile, "--no-write-cookies")
+			args = append(args, "--cookies", y.CookiesFile)
 		}
 	}
 	return args
