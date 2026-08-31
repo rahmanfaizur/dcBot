@@ -223,11 +223,10 @@ func playAutocomplete(svc *music.Service) AutocompleteHandler {
 		}
 
 		choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(results))
+		const searchValuePrefix = "search:"
+		maxTitleLen := 100 - len(searchValuePrefix)
 		for _, result := range results {
-			value := "search:" + result.Title
-			if len(value) > 100 {
-				value = value[:100]
-			}
+			value := searchValuePrefix + truncateRunes(result.Title, maxTitleLen)
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
 				Name:  formatAutocompleteChoice(result.Title),
 				Value: value,

@@ -15,6 +15,7 @@ func ytdlpCommonArgs() []string {
 		"--no-warnings",
 		"--no-progress",
 		"--cache-dir", ytdlpCacheDir,
+		"--js-runtimes", "node:/usr/bin/node",
 		"--extractor-args", "youtube:player_client=web,mweb,android",
 	}
 }
