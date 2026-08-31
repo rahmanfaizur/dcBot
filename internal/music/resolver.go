@@ -157,10 +157,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 			Artist:    artist,
 			Thumbnail: meta.Thumbnail,
 			PageURL:   input,
-			StreamURL: r.proxy.RegisterSourceWithFallback(
-				"ytsearch1:"+meta.Title,
-				soundCloudTarget(meta.Title),
-			),
+			StreamURL: r.proxy.RegisterSource("ytsearch1:" + meta.Title),
 		}, nil
 	}
 
@@ -173,16 +170,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 
 	title, thumbnail, pageURL, durationSec, err := r.resolveMetadata(ctx, target)
 	if err != nil {
-		// If YouTube refuses the lookup entirely, resolve the query elsewhere so
-		// a plain text search still produces a playable track.
-		alternate := soundCloudTarget(searchTextFor(input))
-		if alternate == "" {
-			return ResolvedTrack{}, err
-		}
-		target = alternate
-		if title, thumbnail, pageURL, durationSec, err = r.resolveMetadata(ctx, target); err != nil {
-			return ResolvedTrack{}, err
-		}
+		return ResolvedTrack{}, err
 	}
 	if r.proxy == nil {
 		return ResolvedTrack{}, fmt.Errorf("music stream proxy is not configured")
@@ -199,48 +187,8 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 		Thumbnail:   thumbnail,
 		PageURL:     pageURL,
 		DurationSec: durationSec,
-		StreamURL: r.proxy.RegisterSourceWithFallback(
-			streamTargetForPlayback(target, pageURL),
-			fallbackTargetFor(target, input, title),
-		),
+		StreamURL:   r.proxy.RegisterSource(streamTargetForPlayback(target, pageURL)),
 	}, nil
-}
-
-// fallbackTargetFor picks an alternate source for a track whose primary lookup
-// may fail at playback time. YouTube withholds audio formats from datacenter
-// IPs, so a bot on a cloud host needs somewhere else to get the same song.
-func fallbackTargetFor(target, input, title string) string {
-	if !isYouTubeTarget(target) {
-		return ""
-	}
-	query := searchTextFor(input)
-	if query == "" {
-		query = CleanDisplayTitle(title)
-	}
-	return soundCloudTarget(query)
-}
-
-// searchTextFor returns the plain words a user searched for, or "" when the
-// input was a link or video ID that carries no searchable text.
-func searchTextFor(input string) string {
-	input = strings.TrimSpace(input)
-	if title, ok := strings.CutPrefix(input, searchPrefix); ok {
-		return strings.TrimSpace(title)
-	}
-	if strings.HasPrefix(input, "yt:") {
-		return ""
-	}
-	if classifyInput(input) == inputSearch {
-		return input
-	}
-	return ""
-}
-
-func soundCloudTarget(query string) string {
-	if query = strings.TrimSpace(query); query == "" {
-		return ""
-	}
-	return "scsearch1:" + query
 }
 
 func normalizeResolveTarget(input string) string {
@@ -356,4 +304,3 @@ func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, t
 	}
 	return "", "", "", 0, lastErr
 }
-
