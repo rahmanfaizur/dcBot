@@ -7,6 +7,13 @@ PROXY="${YTDLP_PROXY:-socks5://127.0.0.1:1080}"
 PORT="${WARP_LOCAL_PORT:-1080}"
 TEST_URL="${1:-https://www.youtube.com/watch?v=kJQP7kOUV4w}"
 
+docker_cmd() {
+  if docker "$@" 2>/dev/null; then
+    return 0
+  fi
+  sudo docker "$@"
+}
+
 echo "=== 1) SSH sanity (you are connected — good) ==="
 echo "host: $(hostname)  time: $(date -Is)"
 
@@ -17,12 +24,12 @@ echo "direct: ${direct_ip:-FAILED}"
 
 echo
 echo "=== 3) WARP container running? ==="
-if ! docker ps --format '{{.Names}}' | grep -q '^mybot-warp$'; then
+if ! docker_cmd ps --format '{{.Names}}' | grep -q '^mybot-warp$'; then
   echo "FAIL: mybot-warp container is not running"
   echo "Start it with: docker compose --profile warp up -d"
   exit 1
 fi
-docker ps --filter name=mybot-warp --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+docker_cmd ps --filter name=mybot-warp --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
 echo
 echo "=== 4) Proxy egress IP (should NOT be ${direct_ip}) ==="
