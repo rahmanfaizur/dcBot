@@ -26,7 +26,15 @@ type StreamProxy struct {
 	server     *http.Server
 
 	mu      sync.Mutex
-	sources map[string]string
+	sources map[string]streamSource
+}
+
+// streamSource pairs a primary yt-dlp target with an optional alternate target.
+// YouTube withholds audio formats from datacenter IPs, so playback falls back to
+// another platform rather than failing outright.
+type streamSource struct {
+	target   string
+	fallback string
 }
 
 // NewStreamProxy starts a localhost HTTP server that transcodes yt-dlp output to MP3.
@@ -42,7 +50,7 @@ func NewStreamProxy(logger *slog.Logger, ytdlp YTDLP, ffmpegPath string) (*Strea
 		logger:     logger,
 		ytdlp:      ytdlp,
 		ffmpegPath: ffmpegPath,
-		sources:    make(map[string]string),
+		sources:    make(map[string]streamSource),
 	}
 
 	mux := http.NewServeMux()
@@ -71,9 +79,15 @@ func NewStreamProxy(logger *slog.Logger, ytdlp YTDLP, ffmpegPath string) (*Strea
 
 // RegisterSource returns a localhost MP3 stream URL for the given yt-dlp target.
 func (p *StreamProxy) RegisterSource(target string) string {
+	return p.RegisterSourceWithFallback(target, "")
+}
+
+// RegisterSourceWithFallback also records an alternate target to try when the
+// primary yields no playable URL.
+func (p *StreamProxy) RegisterSourceWithFallback(target, fallback string) string {
 	id := randomStreamID()
 	p.mu.Lock()
-	p.sources[id] = target
+	p.sources[id] = streamSource{target: target, fallback: fallback}
 	p.mu.Unlock()
 	return p.baseURL + "/stream/" + id
 }
@@ -93,7 +107,7 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.mu.Lock()
-	target, ok := p.sources[id]
+	source, ok := p.sources[id]
 	p.mu.Unlock()
 	if !ok {
 		http.NotFound(w, r)
@@ -102,7 +116,14 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 
+	target := source.target
 	mediaURL, err := p.ytdlp.ResolveStreamURL(r.Context(), target)
+	if err != nil && source.fallback != "" && r.Context().Err() == nil {
+		p.logger.Info("primary source unavailable, trying fallback",
+			"target", target, "fallback", source.fallback)
+		target = source.fallback
+		mediaURL, err = p.ytdlp.ResolveStreamURL(r.Context(), target)
+	}
 	if err != nil {
 		p.logger.Warn("yt-dlp stream URL lookup failed", "error", err, "target", target)
 		http.Error(w, "stream setup failed", http.StatusBadGateway)

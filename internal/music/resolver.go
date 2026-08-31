@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,11 +38,23 @@ type ResolvedTrack struct {
 	StreamURL   string
 }
 
+// searchCacheTTL keeps autocomplete snappy: Discord fires a request per
+// keystroke, so repeated prefixes should not re-run yt-dlp.
+const searchCacheTTL = 5 * time.Minute
+
 // Resolver turns user queries and links into playable stream URLs.
 type Resolver struct {
 	ytdlp      YTDLP
 	proxy      *StreamProxy
 	httpClient *http.Client
+
+	searchMu    sync.Mutex
+	searchCache map[string]searchCacheEntry
+}
+
+type searchCacheEntry struct {
+	results   []SearchResult
+	expiresAt time.Time
 }
 
 // NewResolver creates a track resolver backed by yt-dlp for search and platform links.
@@ -52,16 +65,21 @@ func NewResolver(ytdlp YTDLP, proxy *StreamProxy) *Resolver {
 		httpClient: &http.Client{
 			Timeout: 45 * time.Second,
 		},
+		searchCache: make(map[string]searchCacheEntry),
 	}
 }
 
 // SearchResult is a lightweight track match for autocomplete.
 type SearchResult struct {
-	ID    string
-	Title string
+	ID          string
+	Title       string
+	Uploader    string
+	DurationSec int
 }
 
-// Search returns fast YouTube title suggestions for slash-command autocomplete.
+// Search returns real YouTube video matches for slash-command autocomplete.
+// YouTube search still works from cloud hosts even when audio playback there
+// does not, so suggestions stay accurate regardless of where the bot runs.
 func (r *Resolver) Search(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -74,51 +92,45 @@ func (r *Resolver) Search(ctx context.Context, query string, limit int) ([]Searc
 		limit = 25
 	}
 
-	endpoint := "https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=" + url.QueryEscape(query)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	key := strings.ToLower(query)
+	if cached, ok := r.cachedSearch(key, limit); ok {
+		return cached, nil
+	}
+
+	results, err := r.ytdlp.SearchTracks(ctx, query, limit)
 	if err != nil {
-		return nil, fmt.Errorf("building youtube suggest request: %w", err)
+		return nil, err
 	}
 
-	res, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching youtube suggestions: %w", err)
-	}
-	defer res.Body.Close()
-
-	body, err := io.ReadAll(io.LimitReader(res.Body, 65536))
-	if err != nil {
-		return nil, fmt.Errorf("reading youtube suggestions: %w", err)
-	}
-
-	var payload []json.RawMessage
-	if err := json.Unmarshal(body, &payload); err != nil || len(payload) < 2 {
-		return nil, fmt.Errorf("parsing youtube suggestions")
-	}
-
-	var suggestions []string
-	if err := json.Unmarshal(payload[1], &suggestions); err != nil {
-		return nil, fmt.Errorf("decoding youtube suggestions: %w", err)
-	}
-
-	results := make([]SearchResult, 0, min(limit, len(suggestions)))
-	seen := make(map[string]struct{}, len(suggestions))
-	for _, title := range suggestions {
-		title = strings.TrimSpace(title)
-		if len(title) < 2 {
-			continue
-		}
-		key := strings.ToLower(title)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		results = append(results, SearchResult{Title: title})
-		if len(results) >= limit {
-			break
-		}
-	}
+	r.storeSearch(key, results)
 	return results, nil
+}
+
+func (r *Resolver) cachedSearch(key string, limit int) ([]SearchResult, bool) {
+	r.searchMu.Lock()
+	defer r.searchMu.Unlock()
+
+	entry, ok := r.searchCache[key]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, false
+	}
+	if len(entry.results) > limit {
+		return entry.results[:limit], true
+	}
+	return entry.results, true
+}
+
+func (r *Resolver) storeSearch(key string, results []SearchResult) {
+	r.searchMu.Lock()
+	defer r.searchMu.Unlock()
+
+	if r.searchCache == nil || len(r.searchCache) > 256 {
+		r.searchCache = make(map[string]searchCacheEntry, 32)
+	}
+	r.searchCache[key] = searchCacheEntry{
+		results:   results,
+		expiresAt: time.Now().Add(searchCacheTTL),
+	}
 }
 
 // Resolve converts a user query or link into a stream URL Linkdave can play.
@@ -141,11 +153,14 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 			songTitle = CleanDisplayTitle(meta.Title)
 		}
 		return ResolvedTrack{
-			Title:       songTitle,
-			Artist:      artist,
-			Thumbnail:   meta.Thumbnail,
-			PageURL:     input,
-			StreamURL:   r.proxy.RegisterSource("ytsearch1:" + meta.Title),
+			Title:     songTitle,
+			Artist:    artist,
+			Thumbnail: meta.Thumbnail,
+			PageURL:   input,
+			StreamURL: r.proxy.RegisterSourceWithFallback(
+				"ytsearch1:"+meta.Title,
+				soundCloudTarget(meta.Title),
+			),
 		}, nil
 	}
 
@@ -158,7 +173,16 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 
 	title, thumbnail, pageURL, durationSec, err := r.resolveMetadata(ctx, target)
 	if err != nil {
-		return ResolvedTrack{}, err
+		// If YouTube refuses the lookup entirely, resolve the query elsewhere so
+		// a plain text search still produces a playable track.
+		alternate := soundCloudTarget(searchTextFor(input))
+		if alternate == "" {
+			return ResolvedTrack{}, err
+		}
+		target = alternate
+		if title, thumbnail, pageURL, durationSec, err = r.resolveMetadata(ctx, target); err != nil {
+			return ResolvedTrack{}, err
+		}
 	}
 	if r.proxy == nil {
 		return ResolvedTrack{}, fmt.Errorf("music stream proxy is not configured")
@@ -175,8 +199,48 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 		Thumbnail:   thumbnail,
 		PageURL:     pageURL,
 		DurationSec: durationSec,
-		StreamURL:   r.proxy.RegisterSource(streamTargetForPlayback(target, pageURL)),
+		StreamURL: r.proxy.RegisterSourceWithFallback(
+			streamTargetForPlayback(target, pageURL),
+			fallbackTargetFor(target, input, title),
+		),
 	}, nil
+}
+
+// fallbackTargetFor picks an alternate source for a track whose primary lookup
+// may fail at playback time. YouTube withholds audio formats from datacenter
+// IPs, so a bot on a cloud host needs somewhere else to get the same song.
+func fallbackTargetFor(target, input, title string) string {
+	if !isYouTubeTarget(target) {
+		return ""
+	}
+	query := searchTextFor(input)
+	if query == "" {
+		query = CleanDisplayTitle(title)
+	}
+	return soundCloudTarget(query)
+}
+
+// searchTextFor returns the plain words a user searched for, or "" when the
+// input was a link or video ID that carries no searchable text.
+func searchTextFor(input string) string {
+	input = strings.TrimSpace(input)
+	if title, ok := strings.CutPrefix(input, searchPrefix); ok {
+		return strings.TrimSpace(title)
+	}
+	if strings.HasPrefix(input, "yt:") {
+		return ""
+	}
+	if classifyInput(input) == inputSearch {
+		return input
+	}
+	return ""
+}
+
+func soundCloudTarget(query string) string {
+	if query = strings.TrimSpace(query); query == "" {
+		return ""
+	}
+	return "scsearch1:" + query
 }
 
 func normalizeResolveTarget(input string) string {
@@ -293,9 +357,3 @@ func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, t
 	return "", "", "", 0, lastErr
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

@@ -34,7 +34,10 @@ services:
       FFMPEG_PATH: ffmpeg
       HOME: /tmp
       XDG_CACHE_HOME: /tmp
-      YTDLP_COOKIES_FILE: /run/secrets/youtube-cookies.txt
+      # Opt-in only. On datacenter IPs a signed-in session makes YouTube withhold
+      # every audio format, so cookies must never be forced on here. Set
+      # YTDLP_COOKIES_FILE in .env when running from a home connection.
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
     volumes:
       - ./secrets:/run/secrets:ro
     depends_on:

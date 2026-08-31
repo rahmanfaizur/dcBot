@@ -9,22 +9,27 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 const ytdlpCacheDir = "/tmp/yt-dlp-cache"
 
+// An empty entry means "send no player_client override" so yt-dlp uses its own
+// current defaults, which outperform any hand-picked list. tv_embedded was
+// removed upstream and is now skipped as an unsupported client, and forcing
+// android pushes YouTube into SABR-only responses with no plain audio URLs.
 var youtubeMetadataClients = []string{
-	"android,tv_embedded,web",
-	"tv_embedded",
+	"",
+	"web_safari",
 	"android",
 }
 
 var youtubeStreamClients = []string{
+	"",
+	"web_safari",
+	"ios",
 	"android",
-	"tv_embedded",
-	"android,tv_embedded",
-	"web",
 }
 
 var youtubeStreamFormats = []string{
@@ -69,8 +74,12 @@ func PrepareCookiesFile(readOnlyPath string) (string, error) {
 }
 
 func (y YTDLP) baseArgs() []string {
+	return append(y.commonFlags(), "--no-playlist")
+}
+
+// commonFlags omits --no-playlist so multi-result searches are not truncated.
+func (y YTDLP) commonFlags() []string {
 	args := []string{
-		"--no-playlist",
 		"--no-warnings",
 		"--no-progress",
 		"--cache-dir", ytdlpCacheDir,
@@ -82,12 +91,11 @@ func (y YTDLP) baseArgs() []string {
 	return args
 }
 
-func (y YTDLP) commonArgs() []string {
-	return y.argsForYouTubeClients(youtubeMetadataClients[0])
-}
-
 func (y YTDLP) argsForYouTubeClients(clients string) []string {
-	args := append(y.baseArgs(), "--extractor-args", "youtube:player_client="+clients)
+	args := y.baseArgs()
+	if clients = strings.TrimSpace(clients); clients != "" {
+		args = append(args, "--extractor-args", "youtube:player_client="+clients)
+	}
 	if y.CookiesFile != "" {
 		if _, err := os.Stat(y.CookiesFile); err == nil {
 			args = append(args, "--cookies", y.CookiesFile)
@@ -96,33 +104,139 @@ func (y YTDLP) argsForYouTubeClients(clients string) []string {
 	return args
 }
 
-// ResolveStreamURL finds a direct media URL for ffmpeg using several YouTube clients.
-// mweb is intentionally excluded — it often returns storyboard-only formats on cloud IPs.
+// ResolveStreamURL finds a direct media URL for ffmpeg, retrying across client
+// and format combinations until one yields a playable URL.
 func (y YTDLP) ResolveStreamURL(ctx context.Context, target string) (string, error) {
 	var lastErr error
-	for _, clients := range youtubeStreamClients {
-		for _, format := range youtubeStreamFormats {
-			args := append(y.argsForYouTubeClients(clients),
-				"--socket-timeout", "30",
-				"-f", format,
-				"--get-url",
-				target,
-			)
-			cmd := exec.CommandContext(ctx, y.binary(), args...)
-			output, err := captureYTDLPOutput(cmd)
-			if err != nil {
-				lastErr = err
-				continue
-			}
-			if mediaURL := firstHTTPURL(output); mediaURL != "" {
-				return mediaURL, nil
-			}
+	for _, args := range y.streamArgVariants(target) {
+		cmd := exec.CommandContext(ctx, y.binary(), args...)
+		output, err := captureYTDLPOutput(cmd)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if mediaURL := firstHTTPURL(output); mediaURL != "" {
+			return mediaURL, nil
 		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("yt-dlp returned no stream URL")
 	}
 	return "", fmt.Errorf("yt-dlp stream URL lookup failed: %w", lastErr)
+}
+
+// streamArgVariants builds the attempts for a target. Only YouTube needs the
+// client sweep; other extractors resolve on the first try, so retrying them
+// with YouTube-specific flags would just waste time.
+func (y YTDLP) streamArgVariants(target string) [][]string {
+	variants := make([][]string, 0, len(youtubeStreamClients)*len(youtubeStreamFormats))
+	add := func(base []string, format string) {
+		variants = append(variants, append(base,
+			"--socket-timeout", "30",
+			"-f", format,
+			"--get-url",
+			target,
+		))
+	}
+
+	if !isYouTubeTarget(target) {
+		for _, format := range youtubeStreamFormats {
+			add(y.baseArgs(), format)
+		}
+		return variants
+	}
+
+	for _, clients := range youtubeStreamClients {
+		for _, format := range youtubeStreamFormats {
+			add(y.argsForYouTubeClients(clients), format)
+		}
+	}
+	return variants
+}
+
+// searchFieldSep separates --print fields. It is deliberately unlikely to occur
+// inside a video title, uploader name, or ID.
+const searchFieldSep = "|~|"
+
+// SearchTracks lists real YouTube matches for autocomplete. --flat-playlist
+// returns listing data straight from the search page without extracting each
+// video, which is what keeps this inside Discord's autocomplete deadline.
+func (y YTDLP) SearchTracks(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 5
+	}
+
+	template := strings.Join([]string{"%(id)s", "%(title)s", "%(duration)s", "%(uploader)s"}, searchFieldSep)
+	args := append(y.commonFlags(),
+		"--flat-playlist",
+		"--socket-timeout", "10",
+		"--print", template,
+		fmt.Sprintf("ytsearch%d:%s", limit, query),
+	)
+
+	cmd := exec.CommandContext(ctx, y.binary(), args...)
+	output, err := captureYTDLPOutput(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp search failed: %w", err)
+	}
+
+	results := make([]SearchResult, 0, limit)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, searchFieldSep)
+		if len(fields) < 2 {
+			continue
+		}
+
+		title := CleanDisplayTitle(strings.TrimSpace(fields[1]))
+		if title == "" {
+			continue
+		}
+		result := SearchResult{ID: strings.TrimSpace(fields[0]), Title: title}
+		if len(fields) >= 3 {
+			result.DurationSec = parseFlatDuration(fields[2])
+		}
+		if len(fields) >= 4 {
+			result.Uploader = cleanFlatField(fields[3])
+		}
+
+		results = append(results, result)
+		if len(results) >= limit {
+			break
+		}
+	}
+	return results, nil
+}
+
+// cleanFlatField normalizes the "NA" yt-dlp prints for absent template fields.
+func cleanFlatField(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "NA" || value == "None" {
+		return ""
+	}
+	return value
+}
+
+func parseFlatDuration(value string) int {
+	seconds, err := strconv.ParseFloat(cleanFlatField(value), 64)
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return int(seconds + 0.5)
+}
+
+func isYouTubeTarget(target string) bool {
+	lower := strings.ToLower(strings.TrimSpace(target))
+	return strings.HasPrefix(lower, "ytsearch") ||
+		strings.Contains(lower, "youtube.com/") ||
+		strings.Contains(lower, "youtu.be/")
 }
 
 func firstHTTPURL(output string) string {

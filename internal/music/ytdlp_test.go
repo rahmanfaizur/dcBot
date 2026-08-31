@@ -3,6 +3,7 @@ package music
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,70 @@ func TestPrepareCookiesFile(t *testing.T) {
 	}
 	if _, err := os.Stat(got); err != nil {
 		t.Fatalf("writable cookies missing: %v", err)
+	}
+}
+
+func TestIsYouTubeTarget(t *testing.T) {
+	tests := []struct {
+		target string
+		want   bool
+	}{
+		{"ytsearch1:hello", true},
+		{"https://www.youtube.com/watch?v=abc", true},
+		{"https://youtu.be/abc", true},
+		{"scsearch1:hello", false},
+		{"https://soundcloud.com/artist/track", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			if got := isYouTubeTarget(tt.target); got != tt.want {
+				t.Fatalf("isYouTubeTarget(%q) = %v, want %v", tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
+// Non-YouTube targets must not be retried across YouTube player clients.
+func TestStreamArgVariantsSkipsYouTubeClientSweep(t *testing.T) {
+	y := YTDLP{}
+
+	soundCloud := y.streamArgVariants("scsearch1:hello")
+	if len(soundCloud) != len(youtubeStreamFormats) {
+		t.Fatalf("got %d SoundCloud variants, want %d", len(soundCloud), len(youtubeStreamFormats))
+	}
+	for _, args := range soundCloud {
+		for _, arg := range args {
+			if strings.Contains(arg, "player_client") {
+				t.Fatalf("SoundCloud variant should not set player_client: %v", args)
+			}
+		}
+	}
+
+	want := len(youtubeStreamClients) * len(youtubeStreamFormats)
+	if got := len(y.streamArgVariants("ytsearch1:hello")); got != want {
+		t.Fatalf("got %d YouTube variants, want %d", got, want)
+	}
+}
+
+func TestParseFlatDuration(t *testing.T) {
+	tests := []struct {
+		value string
+		want  int
+	}{
+		{"213", 213},
+		{"213.6", 214},
+		{"NA", 0},
+		{"", 0},
+		{"-5", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			if got := parseFlatDuration(tt.value); got != tt.want {
+				t.Fatalf("parseFlatDuration(%q) = %d, want %d", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 

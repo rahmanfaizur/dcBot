@@ -214,7 +214,8 @@ func playAutocomplete(svc *music.Service) AutocompleteHandler {
 			return respondAutocomplete(s, i, nil)
 		}
 
-		searchCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		// Discord drops autocomplete responses after ~3s; leave room for the round trip.
+		searchCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
 		defer cancel()
 
 		results, err := svc.Search(searchCtx, query)
@@ -226,14 +227,31 @@ func playAutocomplete(svc *music.Service) AutocompleteHandler {
 		const searchValuePrefix = "search:"
 		maxTitleLen := 100 - len(searchValuePrefix)
 		for _, result := range results {
+			// A video ID pins the exact pick; searching the title again could
+			// land on a different upload than the one shown in the list.
 			value := searchValuePrefix + truncateRunes(result.Title, maxTitleLen)
+			if result.ID != "" {
+				value = "yt:" + result.ID
+			}
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
-				Name:  formatAutocompleteChoice(result.Title),
+				Name:  autocompleteLabel(result),
 				Value: value,
 			})
 		}
 		return respondAutocomplete(s, i, choices)
 	}
+}
+
+// autocompleteLabel renders a search hit as "TITLE — detail [3:41]".
+func autocompleteLabel(result music.SearchResult) string {
+	const maxLabelLen = 100
+
+	suffix := ""
+	if duration := music.FormatDuration(result.DurationSec); duration != "" {
+		suffix = " [" + duration + "]"
+	}
+	label := formatAutocompleteChoice(result.Title)
+	return truncateRunes(label, maxLabelLen-len([]rune(suffix))) + suffix
 }
 
 func formatAutocompleteChoice(title string) string {
