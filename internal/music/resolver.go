@@ -178,7 +178,7 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 		Thumbnail:   thumbnail,
 		PageURL:     pageURL,
 		DurationSec: durationSec,
-		StreamURL:   r.proxy.RegisterSource(target),
+		StreamURL:   r.proxy.RegisterSource(streamTargetForPlayback(target, pageURL)),
 	}, nil
 }
 
@@ -279,24 +279,11 @@ func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, t
 		return "", "", "", 0, fmt.Errorf("resolving audio with yt-dlp: %w: %s", err, strings.TrimSpace(output))
 	}
 
-	var payload struct {
-		Title      string  `json:"title"`
-		Thumbnail  string  `json:"thumbnail"`
-		WebpageURL string  `json:"webpage_url"`
-		Duration   float64 `json:"duration"`
+	title, thumbnail, pageURL, durationSec, err = parseYTDLPMetadataJSON(output)
+	if err != nil {
+		return "", "", "", 0, fmt.Errorf("parsing yt-dlp metadata: %w", err)
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &payload); err != nil {
-		return "", "", "", 0, fmt.Errorf("parsing yt-dlp metadata: %w: %s", err, strings.TrimSpace(output))
-	}
-
-	title = CleanDisplayTitle(payload.Title)
-	if title == "" {
-		return "", "", "", 0, fmt.Errorf("yt-dlp did not return a title")
-	}
-	if payload.Duration > 0 {
-		durationSec = int(payload.Duration + 0.5)
-	}
-	return title, payload.Thumbnail, payload.WebpageURL, durationSec, nil
+	return title, thumbnail, pageURL, durationSec, nil
 }
 
 func min(a, b int) int {

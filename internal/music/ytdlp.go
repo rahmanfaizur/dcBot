@@ -2,6 +2,8 @@ package music
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os/exec"
 	"strings"
@@ -76,4 +78,70 @@ func (e *ytdlpExecError) Error() string {
 
 func (e *ytdlpExecError) Unwrap() error {
 	return e.err
+}
+
+type ytdlpMetadata struct {
+	Title        string          `json:"title"`
+	FullTitle    string          `json:"fulltitle"`
+	Thumbnail    string          `json:"thumbnail"`
+	WebpageURL   string          `json:"webpage_url"`
+	OriginalURL  string          `json:"original_url"`
+	Duration     float64         `json:"duration"`
+	ID           string          `json:"id"`
+	DisplayID    string          `json:"display_id"`
+	Entries      []ytdlpMetadata `json:"entries"`
+}
+
+func parseYTDLPMetadataJSON(output string) (title, thumbnail, pageURL string, durationSec int, err error) {
+	var root ytdlpMetadata
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &root); err != nil {
+		return "", "", "", 0, err
+	}
+
+	meta := root
+	if len(root.Entries) > 0 {
+		meta = root.Entries[0]
+	}
+
+	title = CleanDisplayTitle(meta.Title)
+	if title == "" {
+		title = CleanDisplayTitle(meta.FullTitle)
+	}
+	if title == "" {
+		return "", "", "", 0, fmt.Errorf("yt-dlp did not return a title")
+	}
+
+	pageURL = youtubeWatchURL(meta)
+	if meta.Duration > 0 {
+		durationSec = int(meta.Duration + 0.5)
+	}
+	return title, meta.Thumbnail, pageURL, durationSec, nil
+}
+
+func youtubeWatchURL(meta ytdlpMetadata) string {
+	for _, candidate := range []string{meta.WebpageURL, meta.OriginalURL} {
+		if isYouTubeWatchURL(candidate) {
+			return candidate
+		}
+	}
+	id := meta.ID
+	if id == "" {
+		id = meta.DisplayID
+	}
+	if id != "" {
+		return "https://www.youtube.com/watch?v=" + id
+	}
+	return ""
+}
+
+func isYouTubeWatchURL(url string) bool {
+	lower := strings.ToLower(strings.TrimSpace(url))
+	return strings.Contains(lower, "youtube.com/watch") || strings.Contains(lower, "youtu.be/")
+}
+
+func streamTargetForPlayback(target, pageURL string) string {
+	if isYouTubeWatchURL(pageURL) {
+		return pageURL
+	}
+	return target
 }
