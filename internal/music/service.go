@@ -204,6 +204,7 @@ func (s *Service) Enqueue(ctx context.Context, guildID, query, requesterID, requ
 
 	track, err := s.resolver.Resolve(ctx, query)
 	if err != nil {
+		s.logger.Warn("resolve failed", "query", query, "error", err)
 		return ResolvedTrack{}, false, err
 	}
 

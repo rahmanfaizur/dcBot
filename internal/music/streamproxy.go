@@ -1,6 +1,7 @@
 package music
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -104,15 +105,13 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 
-	ytdlp := exec.CommandContext(r.Context(), p.ytdlpPath,
-		"--no-playlist",
-		"--no-warnings",
+	ytdlpArgs := append(ytdlpCommonArgs(),
 		"--socket-timeout", "30",
 		"-f", "bestaudio/best",
-		"--extractor-args", "youtube:player_client=default,mweb,web,android",
 		"-o", "-",
 		target,
 	)
+	ytdlp := exec.CommandContext(r.Context(), p.ytdlpPath, ytdlpArgs...)
 
 	ytdlpStdout, err := ytdlp.StdoutPipe()
 	if err != nil {
@@ -120,7 +119,8 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream setup failed", http.StatusInternalServerError)
 		return
 	}
-	ytdlp.Stderr = io.Discard
+	var ytdlpErr bytes.Buffer
+	ytdlp.Stderr = &ytdlpErr
 
 	ffmpeg := exec.CommandContext(r.Context(), p.ffmpegPath,
 		"-nostdin",
@@ -157,7 +157,14 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 		p.logger.Warn("stream copy ended", "error", err, "target", target)
 	}
 
-	_ = ytdlp.Wait()
+	if err := ytdlp.Wait(); err != nil {
+		stderr := strings.TrimSpace(ytdlpErr.String())
+		if stderr != "" {
+			p.logger.Warn("yt-dlp stream exited", "error", err, "stderr", stderr, "target", target)
+		} else {
+			p.logger.Warn("yt-dlp stream exited", "error", err, "target", target)
+		}
+	}
 	_ = ffmpeg.Wait()
 }
 

@@ -32,6 +32,8 @@ services:
       # Override host dev paths from .env (e.g. /snap/bin/yt-dlp does not exist in Alpine).
       YTDLP_PATH: yt-dlp
       FFMPEG_PATH: ffmpeg
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp
     depends_on:
       linkdave:
         condition: service_healthy

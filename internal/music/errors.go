@@ -34,7 +34,7 @@ func DescribePlaybackError(err error) PlaybackError {
 		info.Description = "I'm not in a voice channel — run `/join` or `/play` from a voice channel first."
 	case strings.Contains(lower, "yt-dlp"):
 		info.Title = "Could not fetch audio"
-		info.Description = "I couldn't download that track — update yt-dlp (`sudo snap install yt-dlp`) and try again."
+		info.Description = "I couldn't download that track — try a direct YouTube link, or ask the bot owner to check server logs."
 	case strings.Contains(lower, "client.timeout exceeded"):
 		info.Title = "Request timed out"
 		info.Description = "The audio server took too long — try again or pick a shorter track."
@@ -112,7 +112,7 @@ func FriendlyError(err error) string {
 	case strings.Contains(lower, "timed out waiting for linkdave"):
 		return "voice connection timed out — run /leave then /play again (bot may have restarted)"
 	case strings.Contains(lower, "yt-dlp"):
-		return "could not fetch audio — update yt-dlp: `sudo snap install yt-dlp` then retry"
+		return "could not fetch audio — try a YouTube link or check server logs"
 	case strings.Contains(lower, "client.timeout exceeded"):
 		return "audio server took too long — try again or pick a shorter track"
 	case strings.Contains(lower, "empty mp3 stream"):

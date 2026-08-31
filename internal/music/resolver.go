@@ -266,18 +266,15 @@ func (r *Resolver) spotifyMetadata(ctx context.Context, spotifyURL string) (spot
 }
 
 func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, thumbnail, pageURL string, durationSec int, err error) {
-	cmd := exec.CommandContext(ctx, r.ytdlpPath,
-		"--no-playlist",
-		"--no-warnings",
-		"--no-progress",
+	args := append(ytdlpCommonArgs(),
 		"--socket-timeout", "15",
-		"--extractor-args", "youtube:player_client=default,mweb,web,android",
 		"--print", "%(title)s",
 		"--print", "%(thumbnail)s",
 		"--print", "%(webpage_url)s",
 		"--print", "%(duration)s",
 		target,
 	)
+	cmd := exec.CommandContext(ctx, r.ytdlpPath, args...)
 
 	output, err := captureYTDLPOutput(cmd)
 	if err != nil {

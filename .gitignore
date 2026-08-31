@@ -3,6 +3,16 @@
 .env.*
 !.env.example
 
+# SSH keys and credentials (never commit)
+*.pem
+*.key
+*_key.pem
+id_rsa
+id_rsa.pub
+credentials.json
+secrets/
+cookies.txt
+
 # SQLite databases
 *.db
 *.db-journal

@@ -2,8 +2,6 @@ package music
 
 import (
 	"fmt"
-	"io"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -114,24 +112,3 @@ func isYTDLPNoise(line string) bool {
 	}
 }
 
-func captureYTDLPOutput(cmd *exec.Cmd) (string, error) {
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	cmd.Stderr = io.Discard
-
-	if err := cmd.Start(); err != nil {
-		return "", err
-	}
-
-	body, err := io.ReadAll(stdout)
-	if err != nil {
-		_ = cmd.Wait()
-		return "", err
-	}
-	if err := cmd.Wait(); err != nil {
-		return strings.TrimSpace(string(body)), err
-	}
-	return strings.TrimSpace(string(body)), nil
-}
