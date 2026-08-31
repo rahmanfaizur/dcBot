@@ -69,6 +69,8 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 	switch action {
 	case "queue":
 		return respondEphemeralEmbed(s, i, queueListEmbed(p.svc.Snapshot(i.GuildID)))
+	case "fact":
+		return respondEphemeralEmbed(s, i, funFactEmbed())
 	}
 
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{

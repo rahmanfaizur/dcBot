@@ -37,21 +37,59 @@ func TestQueueEmptyDescription(t *testing.T) {
 func TestLoadingEmbed(t *testing.T) {
 	t.Parallel()
 
-	embed := loadingEmbed()
+	embed := loadingEmbed("not cute anymore")
 	if embed.Author.Name != "FINDING TRACK" {
 		t.Fatalf("author: got %q", embed.Author.Name)
 	}
 	if embed.Color != colorLoading {
 		t.Fatalf("color: got %#x want %#x", embed.Color, colorLoading)
 	}
-	if !strings.Contains(embed.Description, "Searching and preparing audio") {
-		t.Fatalf("description: %q", embed.Description)
+	if !strings.Contains(embed.Description, "not cute anymore") {
+		t.Fatalf("description should include query: %q", embed.Description)
 	}
 	if !strings.Contains(embed.Description, "few seconds") {
 		t.Fatalf("should mention wait time: %q", embed.Description)
 	}
+	if embed.Footer == nil || embed.Footer.Text == "" {
+		t.Fatalf("expected footer fun fact")
+	}
 	if strings.ContainsAny(embed.Description, "▁▃▅▇") {
 		t.Fatalf("loader should be text-only: %q", embed.Description)
+	}
+}
+
+func TestPreparingEmbed(t *testing.T) {
+	t.Parallel()
+
+	embed := preparingEmbed("illit")
+	if embed.Author.Name != "PREPARING AUDIO" {
+		t.Fatalf("author: got %q", embed.Author.Name)
+	}
+	if !strings.Contains(embed.Description, "illit") {
+		t.Fatalf("description: %q", embed.Description)
+	}
+}
+
+func TestFormatLoadingQuery(t *testing.T) {
+	t.Parallel()
+
+	if got := formatLoadingQuery("yt:abc123"); got != "your YouTube pick" {
+		t.Fatalf("yt prefix: got %q", got)
+	}
+	if got := formatLoadingQuery("search:hello world"); got != "hello world" {
+		t.Fatalf("search prefix: got %q", got)
+	}
+}
+
+func TestFunFactEmbed(t *testing.T) {
+	t.Parallel()
+
+	embed := funFactEmbed()
+	if embed.Author.Name != "FUN FACT" {
+		t.Fatalf("author: got %q", embed.Author.Name)
+	}
+	if embed.Description == "" {
+		t.Fatalf("expected fact text")
 	}
 }
 
@@ -118,6 +156,7 @@ func TestButtonsHaveNoEmoji(t *testing.T) {
 		skipButton("guild"),
 		queueButton("guild"),
 		stopButton("guild"),
+		funFactButton("guild"),
 	}
 	for _, btn := range buttons {
 		if btn.Emoji != nil {

@@ -134,12 +134,14 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 		if err := deferChannel(s, i); err != nil {
 			return err
 		}
-		_ = editDeferredEmbed(s, i, loadingEmbed())
+		_ = editDeferredEmbed(s, i, loadingEmbed(query))
 
 		if err := svc.EnsureVoice(playCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
 			_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
 			return nil
 		}
+
+		_ = editDeferredEmbed(s, i, preparingEmbed(query))
 
 		track, started, err := svc.Enqueue(playCtx, i.GuildID, query, requesterID(i), requester)
 		if err != nil {

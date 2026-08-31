@@ -22,11 +22,23 @@ const (
 	queueListPreviewLimit = 4
 )
 
-func loadingEmbed() *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+func loadingEmbed(query string) *discordgo.MessageEmbed {
+	embed := &discordgo.MessageEmbed{
 		Color:       colorLoading,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FINDING TRACK"},
-		Description: "Searching and preparing audio…\n*This usually takes a few seconds.*",
+		Description: loadingDescription(query),
+	}
+	if fact := randomBotFact(); fact != "" {
+		embed.Footer = &discordgo.MessageEmbedFooter{Text: fact}
+	}
+	return embed
+}
+
+func preparingEmbed(query string) *discordgo.MessageEmbed {
+	return &discordgo.MessageEmbed{
+		Color:       colorLoading,
+		Author:      &discordgo.MessageEmbedAuthor{Name: "PREPARING AUDIO"},
+		Description: preparingDescription(query),
 	}
 }
 
@@ -102,14 +114,14 @@ func playerControlsForGuild(guildID string, state music.PlaybackState) []discord
 	if state.Now != nil {
 		track = queueItemToTrack(*state.Now)
 	}
-	linkRow := linkButtonsForTrack(track)
+	linkRow := linkButtonsForGuild(guildID, track)
 	if len(linkRow) > 0 {
 		rows = append(rows, discordgo.ActionsRow{Components: linkRow})
 	}
 	return rows
 }
 
-func linkButtonsForTrack(track music.ResolvedTrack) []discordgo.MessageComponent {
+func linkButtonsForGuild(guildID string, track music.ResolvedTrack) []discordgo.MessageComponent {
 	var buttons []discordgo.MessageComponent
 
 	youtubeURL := ""
@@ -139,7 +151,17 @@ func linkButtonsForTrack(track music.ResolvedTrack) []discordgo.MessageComponent
 			URL:   spotifyURL,
 		})
 	}
+
+	buttons = append(buttons, funFactButton(guildID))
 	return buttons
+}
+
+func funFactButton(guildID string) discordgo.Button {
+	return discordgo.Button{
+		Label:    "Fun Fact",
+		Style:    discordgo.SecondaryButton,
+		CustomID: "music:fact:" + guildID,
+	}
 }
 
 func youtubeSearchURL(artist, title string) string {
