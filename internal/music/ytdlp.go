@@ -266,6 +266,87 @@ func (y YTDLP) SearchTracks(ctx context.Context, query string, limit int) ([]Sea
 	return results, nil
 }
 
+// ListPlaylistEntries returns flat playlist metadata without downloading each track.
+func (y YTDLP) ListPlaylistEntries(ctx context.Context, playlistURL string, limit int) ([]PlaylistEntry, error) {
+	playlistURL = strings.TrimSpace(playlistURL)
+	if playlistURL == "" {
+		return nil, fmt.Errorf("playlist url is required")
+	}
+	if limit <= 0 {
+		limit = MaxPlaylistTracks
+	}
+	if limit > MaxPlaylistTracks {
+		limit = MaxPlaylistTracks
+	}
+
+	template := strings.Join([]string{"%(id)s", "%(title)s", "%(duration)s", "%(uploader)s", "%(webpage_url)s"}, searchFieldSep)
+	args := append(y.commonFlags(),
+		"--flat-playlist",
+		"--socket-timeout", "30",
+		"--playlist-end", strconv.Itoa(limit),
+		"--print", template,
+		playlistURL,
+	)
+
+	cmd := exec.CommandContext(ctx, y.binary(), args...)
+	output, err := captureYTDLPOutput(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp playlist failed: %w", err)
+	}
+
+	entries := make([]PlaylistEntry, 0, limit)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, searchFieldSep)
+		if len(fields) < 2 {
+			continue
+		}
+
+		id := strings.TrimSpace(fields[0])
+		title := CleanDisplayTitle(strings.TrimSpace(fields[1]))
+		if title == "" || id == "" || id == "NA" {
+			continue
+		}
+
+		entry := PlaylistEntry{
+			ID:    id,
+			Title: title,
+		}
+		if len(fields) >= 3 {
+			entry.DurationSec = parseFlatDuration(fields[2])
+		}
+		if len(fields) >= 4 {
+			entry.Artist = cleanFlatField(fields[3])
+		}
+		if len(fields) >= 5 {
+			entry.PageURL = cleanFlatField(fields[4])
+		}
+		if entry.PageURL == "" {
+			entry.PageURL = "https://www.youtube.com/watch?v=" + id
+		}
+
+		artist, songTitle := splitTrackTitle(entry.Title)
+		if entry.Artist == "" {
+			entry.Artist = artist
+		}
+		if songTitle != "" {
+			entry.Title = songTitle
+		}
+
+		entries = append(entries, entry)
+		if len(entries) >= limit {
+			break
+		}
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("playlist is empty or unavailable")
+	}
+	return entries, nil
+}
+
 // cleanFlatField normalizes the "NA" yt-dlp prints for absent template fields.
 func cleanFlatField(value string) string {
 	value = strings.TrimSpace(value)

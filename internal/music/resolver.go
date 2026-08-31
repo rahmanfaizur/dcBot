@@ -191,6 +191,38 @@ func (r *Resolver) Resolve(ctx context.Context, input string) (ResolvedTrack, er
 	}, nil
 }
 
+// ResolvePlaylist turns a playlist URL into playable queue entries.
+func (r *Resolver) ResolvePlaylist(ctx context.Context, input string, limit int) ([]ResolvedTrack, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, fmt.Errorf("playlist url is required")
+	}
+	if r.proxy == nil {
+		return nil, fmt.Errorf("music stream proxy is not configured")
+	}
+
+	entries, err := r.ytdlp.ListPlaylistEntries(ctx, input, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	tracks := make([]ResolvedTrack, 0, len(entries))
+	for _, entry := range entries {
+		pageURL := entry.PageURL
+		if pageURL == "" {
+			pageURL = "https://www.youtube.com/watch?v=" + entry.ID
+		}
+		tracks = append(tracks, ResolvedTrack{
+			Title:       entry.Title,
+			Artist:      entry.Artist,
+			PageURL:     pageURL,
+			DurationSec: entry.DurationSec,
+			StreamURL:   r.proxy.RegisterSource(streamTargetForPlayback(pageURL, pageURL)),
+		})
+	}
+	return tracks, nil
+}
+
 func normalizeResolveTarget(input string) string {
 	if id, ok := strings.CutPrefix(input, "yt:"); ok {
 		return "https://www.youtube.com/watch?v=" + id

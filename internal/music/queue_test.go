@@ -72,6 +72,32 @@ func TestQueueSkip(t *testing.T) {
 	}
 }
 
+func TestQueueRemoveAndMove(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue()
+	q.Enqueue(QueueItem{Title: "a"})
+	q.Enqueue(QueueItem{Title: "b"})
+	q.Enqueue(QueueItem{Title: "c"})
+
+	removed, ok := q.RemoveUpcoming(2)
+	if !ok || removed.Title != "b" {
+		t.Fatalf("remove: got %#v ok=%v", removed, ok)
+	}
+	if q.Len() != 2 {
+		t.Fatalf("len after remove: %d", q.Len())
+	}
+
+	moved, ok := q.MoveUpcomingToFront(2)
+	if !ok || moved.Title != "c" {
+		t.Fatalf("move: got %#v ok=%v", moved, ok)
+	}
+	_, upcoming := q.Snapshot()
+	if len(upcoming) != 2 || upcoming[0].Title != "c" {
+		t.Fatalf("upcoming after move: %#v", upcoming)
+	}
+}
+
 func TestClassifyInput(t *testing.T) {
 	tests := []struct {
 		input string

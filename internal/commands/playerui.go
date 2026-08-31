@@ -10,14 +10,16 @@ import (
 )
 
 const (
-	colorNowPlaying = 0xE91E63
-	colorQueued     = 0x43B581
-	colorQueueList  = 0x5865F2
-	colorLoading    = 0xFF9F0A
-	colorPaused     = 0xF9A825
-	colorIdle       = 0x5C5F66
-	colorError      = 0xFF5C8A
-	colorVoice      = 0x5865F2
+	// Warm fuchsia / magenta palette to match server sidebar accents.
+	colorNowPlaying = 0xE879F9
+	colorQueued     = 0xF472B6
+	colorQueueList  = 0xC084FC
+	colorLoading    = 0xFB923C
+	colorPaused     = 0xFBBF24
+	colorIdle       = 0xA78BFA
+	colorError      = 0xFB7185
+	colorVoice      = 0xE879F9
+	colorFunFact    = 0xF9A8D4
 
 	queueListPreviewLimit = 4
 )
@@ -101,6 +103,7 @@ func playerControlsForGuild(guildID string, state music.PlaybackState) []discord
 		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 			transportButton(state.Paused, guildID),
 			skipButton(guildID),
+			voteSkipButton(guildID, state),
 			queueButton(guildID),
 			stopButton(guildID),
 		}},
@@ -155,7 +158,7 @@ func linkButtonsForGuild(guildID string, track music.ResolvedTrack) []discordgo.
 func funFactButton(guildID string) discordgo.Button {
 	return discordgo.Button{
 		Label:    "Fun Fact",
-		Style:    discordgo.SecondaryButton,
+		Style:    discordgo.SuccessButton,
 		CustomID: "music:fact:" + guildID,
 	}
 }
@@ -174,7 +177,7 @@ func transportButton(paused bool, guildID string) discordgo.Button {
 	if paused {
 		return discordgo.Button{
 			Label:    "Resume",
-			Style:    discordgo.PrimaryButton,
+			Style:    discordgo.SuccessButton,
 			CustomID: "music:resume:" + guildID,
 		}
 	}
@@ -188,15 +191,27 @@ func transportButton(paused bool, guildID string) discordgo.Button {
 func skipButton(guildID string) discordgo.Button {
 	return discordgo.Button{
 		Label:    "Skip",
-		Style:    discordgo.SecondaryButton,
+		Style:    discordgo.SuccessButton,
 		CustomID: "music:skip:" + guildID,
+	}
+}
+
+func voteSkipButton(guildID string, state music.PlaybackState) discordgo.Button {
+	label := "Vote Skip"
+	if state.VoteSkipNeeded > 0 {
+		label = fmt.Sprintf("Vote Skip (%d/%d)", state.VoteSkipCount, state.VoteSkipNeeded)
+	}
+	return discordgo.Button{
+		Label:    label,
+		Style:    discordgo.PrimaryButton,
+		CustomID: "music:voteskip:" + guildID,
 	}
 }
 
 func queueButton(guildID string) discordgo.Button {
 	return discordgo.Button{
 		Label:    "Queue",
-		Style:    discordgo.SecondaryButton,
+		Style:    discordgo.PrimaryButton,
 		CustomID: "music:queue:" + guildID,
 	}
 }

@@ -66,7 +66,7 @@ func preparingDescription(query string) string {
 func songFactEmbed(ctx context.Context, track music.ResolvedTrack, requester string) *discordgo.MessageEmbed {
 	fact := music.SongFact(ctx, track.Artist, track.Title, track.DurationSec, requester)
 	embed := &discordgo.MessageEmbed{
-		Color:       colorQueueList,
+		Color:       colorFunFact,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FUN FACT"},
 		Description: fact,
 	}

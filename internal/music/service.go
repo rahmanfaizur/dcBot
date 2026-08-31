@@ -21,10 +21,12 @@ type PlaybackEvent struct {
 
 // PlaybackState is a snapshot of the current guild player for UI rendering.
 type PlaybackState struct {
-	Now        *QueueItem
-	Upcoming   int
-	Paused     bool
-	ElapsedSec int
+	Now            *QueueItem
+	Upcoming       int
+	Paused         bool
+	ElapsedSec     int
+	VoteSkipCount  int
+	VoteSkipNeeded int
 }
 
 // Service coordinates Linkdave playback and per-guild queues.
@@ -39,6 +41,9 @@ type Service struct {
 	listenerMu sync.Mutex
 	listener   func(PlaybackEvent)
 	session    *discordgo.Session
+
+	voteMu   sync.Mutex
+	voteSkip map[string]map[string]struct{}
 
 	clockMu       sync.Mutex
 	playbackStart map[string]time.Time
@@ -90,6 +95,13 @@ func (s *Service) PlaybackState(guildID string) PlaybackState {
 		state.Now = &copy
 	}
 	state.ElapsedSec = s.elapsedSec(guildID)
+
+	s.listenerMu.Lock()
+	session := s.session
+	s.listenerMu.Unlock()
+	if session != nil && session.State != nil && session.State.User != nil {
+		state.VoteSkipCount, state.VoteSkipNeeded = s.VoteSkipStatus(session, session.State.User.ID, guildID)
+	}
 	return state
 }
 
@@ -113,6 +125,7 @@ func (s *Service) markPlaybackStart(guildID string) {
 	defer s.clockMu.Unlock()
 	s.playbackStart[guildID] = time.Now()
 	delete(s.frozenElapsed, guildID)
+	s.clearVoteSkip(guildID)
 }
 
 func (s *Service) markPlaybackPause(guildID string) {
@@ -179,6 +192,7 @@ func (s *Service) Join(ctx context.Context, session *discordgo.Session, botUserI
 func (s *Service) Leave(ctx context.Context, session *discordgo.Session, botUserID, guildID string) error {
 	s.queue(guildID).Clear()
 	s.clearPlaybackClock(guildID)
+	s.clearVoteSkip(guildID)
 	player := s.linkdave.Player(guildID)
 
 	botChannel := BotVoiceChannel(session, guildID, botUserID)
@@ -189,52 +203,6 @@ func (s *Service) Leave(ctx context.Context, session *discordgo.Session, botUser
 	}
 	s.emitPlayback(guildID, false)
 	return nil
-}
-
-// Enqueue resolves input and either starts playback or appends to the queue.
-// Call EnsureVoice before this when the bot may need to join a channel.
-func (s *Service) Enqueue(ctx context.Context, guildID, query, requesterID, requesterName string) (ResolvedTrack, bool, error) {
-	player := s.linkdave.Player(guildID)
-	s.wireGuild(guildID)
-
-	if !player.Connected() {
-		return ResolvedTrack{}, false, fmt.Errorf("bot is not connected to voice — try /join first")
-	}
-
-	s.resetStaleQueue(guildID)
-
-	track, err := s.resolver.Resolve(ctx, query)
-	if err != nil {
-		s.logger.Warn("resolve failed", "query", query, "error", err)
-		return ResolvedTrack{}, false, err
-	}
-
-	queue := s.queue(guildID)
-	item := QueueItem{
-		Title:         track.Title,
-		Artist:        track.Artist,
-		Thumbnail:     track.Thumbnail,
-		PageURL:       track.PageURL,
-		DurationSec:   track.DurationSec,
-		StreamURL:     track.StreamURL,
-		RequesterID:   requesterID,
-		RequesterName: requesterName,
-	}
-
-	if player.State() == linkdave.PlayerStatePlaying || player.State() == linkdave.PlayerStatePaused || queue.IsActive() {
-		queue.Enqueue(item)
-		return track, false, nil
-	}
-
-	queue.SetActive(true)
-	queue.SetNowPlaying(item)
-	if err := player.Play(ctx, item.StreamURL, requesterID); err != nil {
-		queue.Clear()
-		s.clearPlaybackClock(guildID)
-		return ResolvedTrack{}, false, err
-	}
-	s.markPlaybackStart(guildID)
-	return track, true, nil
 }
 
 // EnsureVoice joins or re-syncs the bot voice session with Linkdave.

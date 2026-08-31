@@ -35,7 +35,7 @@ func MusicCommands(svc *music.Service, panel *PlayerPanel) []Command {
 					{
 						Type:         discordgo.ApplicationCommandOptionString,
 						Name:         "query",
-						Description:  "Search, or paste a YouTube/SoundCloud/Spotify link",
+						Description:  "Search, YouTube/Spotify playlist, or paste a link",
 						Required:     true,
 						Autocomplete: true,
 					},
@@ -126,7 +126,7 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 			return respondEphemeral(s, i, "Join a voice channel first.")
 		}
 
-		playCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		playCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 		defer cancel()
 
 		requester := requesterName(i)
@@ -134,7 +134,11 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 		if err := deferChannel(s, i); err != nil {
 			return err
 		}
-		_ = editDeferredEmbed(s, i, loadingEmbed(query))
+		if music.IsPlaylistURL(query) {
+			_ = editDeferredEmbed(s, i, loadingPlaylistEmbed(query))
+		} else {
+			_ = editDeferredEmbed(s, i, loadingEmbed(query))
+		}
 
 		if err := svc.EnsureVoice(playCtx, s, botUserID(s), i.GuildID, channelID); err != nil {
 			_ = editDeferredEmbed(s, i, voiceErrorEmbed(music.FriendlyControlError(err)))
@@ -143,18 +147,26 @@ func playHandler(svc *music.Service, panel *PlayerPanel) Handler {
 
 		_ = editDeferredEmbed(s, i, preparingEmbed(query))
 
-		track, started, err := svc.Enqueue(playCtx, i.GuildID, query, requesterID(i), requester)
+		result, err := svc.Enqueue(playCtx, i.GuildID, query, requesterID(i), requester)
 		if err != nil {
 			_ = editDeferredEmbed(s, i, playErrorEmbed(music.DescribePlaybackError(err)))
 			return nil
 		}
 
-		if started {
-			return panel.PublishFromInteraction(s, i, track, requester)
+		if len(result.Tracks) == 0 {
+			_ = editDeferredEmbed(s, i, playErrorEmbed(music.DescribePlaybackError(fmt.Errorf("nothing was added to the queue"))))
+			return nil
+		}
+
+		if result.Started {
+			return panel.PublishFromInteraction(s, i, result.Tracks[0], requester)
 		}
 
 		panel.UpdateGuildPanel(s, i.GuildID)
-		return editDeferredEmbed(s, i, queuedEmbed(track, svc.QueuePosition(i.GuildID), requester))
+		if result.Playlist {
+			return editDeferredEmbed(s, i, playlistQueuedEmbed(result.PlaylistTotal, requester))
+		}
+		return editDeferredEmbed(s, i, queuedEmbed(result.Tracks[0], svc.QueuePosition(i.GuildID), requester))
 	}
 }
 
@@ -173,7 +185,7 @@ func skipHandler(svc *music.Service) Handler {
 
 func queueHandler(svc *music.Service) Handler {
 	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
-		return respondChannelEmbed(s, i, queueListEmbed(svc.Snapshot(i.GuildID)))
+		return respondQueueManage(s, i, svc)
 	}
 }
 

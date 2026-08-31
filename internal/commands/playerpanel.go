@@ -2,7 +2,9 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +72,7 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 	action := componentAction(customID)
 	switch action {
 	case "queue":
-		return respondEphemeralEmbed(s, i, queueListEmbed(p.svc.Snapshot(i.GuildID)))
+		return respondQueueManage(s, i, p.svc)
 	case "fact":
 		state := p.svc.PlaybackState(i.GuildID)
 		if state.Now == nil {
@@ -83,6 +85,31 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 		defer cancel()
 		track := queueItemToTrack(*state.Now)
 		return editDeferredEmbed(s, i, songFactEmbed(factCtx, track, state.Now.RequesterName))
+	case "qremove", "qboost":
+		return p.handleQueueEdit(ctx, s, i, action)
+	case "voteskip":
+		state := p.svc.PlaybackState(i.GuildID)
+		if state.Now == nil {
+			return respondEphemeral(s, i, "Nothing is playing right now.")
+		}
+		if err := deferEphemeral(s, i); err != nil {
+			return err
+		}
+		opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		current, needed, skipped, err := p.svc.VoteSkip(opCtx, s, botUserID(s), i.GuildID, requesterID(i))
+		if err != nil {
+			_, followErr := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: music.FriendlyControlError(err),
+			})
+			return followErr
+		}
+		if skipped {
+			p.UpdateGuildPanel(s, i.GuildID)
+			return editDeferredEphemeral(s, i, fmt.Sprintf("Vote skip passed (%d/%d). Skipped to the next track.", needed, needed))
+		}
+		p.UpdateGuildPanel(s, i.GuildID)
+		return editDeferredEphemeral(s, i, fmt.Sprintf("Vote recorded **%d/%d** to skip.", current, needed))
 	}
 
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -305,6 +332,47 @@ func (p *PlayerPanel) acknowledgeControl(s *discordgo.Session, i *discordgo.Inte
 		Components: &empty,
 	})
 	return err
+}
+
+func (p *PlayerPanel) handleQueueEdit(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate, action string) error {
+	data := i.MessageComponentData()
+	if len(data.Values) == 0 {
+		return respondEphemeral(s, i, "Pick a track first.")
+	}
+	index, err := strconv.Atoi(data.Values[0])
+	if err != nil || index < 1 {
+		return respondEphemeral(s, i, "Invalid queue position.")
+	}
+
+	var status string
+	switch action {
+	case "qremove":
+		removed, ok := p.svc.RemoveQueueItem(i.GuildID, index)
+		if !ok {
+			return respondEphemeral(s, i, "That queue position is gone.")
+		}
+		status = fmt.Sprintf("Removed **%s**.", cleanDisplayTitle(removed.Title))
+	case "qboost":
+		moved, ok := p.svc.MoveQueueToFront(i.GuildID, index)
+		if !ok {
+			return respondEphemeral(s, i, "That queue position is gone.")
+		}
+		status = fmt.Sprintf("**%s** will play next.", cleanDisplayTitle(moved.Title))
+	default:
+		return respondEphemeral(s, i, "Unknown queue action.")
+	}
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	}); err != nil {
+		return err
+	}
+
+	snapshot := p.svc.Snapshot(i.GuildID)
+	embed := queueManageEmbed(snapshot)
+	embed.Description = status
+	components := queueManageComponents(i.GuildID, snapshot.Upcoming)
+	return editQueueManage(s, i, embed, components)
 }
 
 func editDeferredPlayer(s *discordgo.Session, i *discordgo.InteractionCreate, embed *discordgo.MessageEmbed, components []discordgo.MessageComponent) (*discordgo.Message, error) {

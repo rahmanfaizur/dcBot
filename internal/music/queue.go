@@ -123,3 +123,28 @@ func (q *Queue) Len() int {
 	defer q.mu.Unlock()
 	return len(q.items)
 }
+
+// RemoveUpcoming drops a 1-based upcoming track index.
+func (q *Queue) RemoveUpcoming(index int) (QueueItem, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if index < 1 || index > len(q.items) {
+		return QueueItem{}, false
+	}
+	removed := q.items[index-1]
+	q.items = append(q.items[:index-1], q.items[index:]...)
+	return removed, true
+}
+
+// MoveUpcomingToFront moves a 1-based upcoming track to play next.
+func (q *Queue) MoveUpcomingToFront(index int) (QueueItem, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if index < 1 || index > len(q.items) {
+		return QueueItem{}, false
+	}
+	item := q.items[index-1]
+	q.items = append(q.items[:index-1], q.items[index:]...)
+	q.items = append([]QueueItem{item}, q.items...)
+	return item, true
+}
