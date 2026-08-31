@@ -58,6 +58,13 @@ func TestPrepareCookiesFile(t *testing.T) {
 	}
 }
 
+func TestFirstHTTPURL(t *testing.T) {
+	got := firstHTTPURL("noise\nhttps://example.com/audio.webm\n")
+	if got != "https://example.com/audio.webm" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestStreamTargetForPlayback(t *testing.T) {
 	got := streamTargetForPlayback(
 		"ytsearch1:hello",

@@ -263,25 +263,34 @@ func (r *Resolver) spotifyMetadata(ctx context.Context, spotifyURL string) (spot
 }
 
 func (r *Resolver) resolveMetadata(ctx context.Context, target string) (title, thumbnail, pageURL string, durationSec int, err error) {
-	args := append(r.ytdlp.commonArgs(),
-		"--socket-timeout", "30",
-		"--no-download",
-		"--ignore-no-formats-error",
-		"--dump-single-json",
-		target,
-	)
-	cmd := exec.CommandContext(ctx, r.ytdlp.binary(), args...)
+	var lastErr error
+	for _, clients := range youtubeMetadataClients {
+		args := append(r.ytdlp.argsForYouTubeClients(clients),
+			"--socket-timeout", "30",
+			"--no-download",
+			"--ignore-no-formats-error",
+			"--dump-single-json",
+			target,
+		)
+		cmd := exec.CommandContext(ctx, r.ytdlp.binary(), args...)
 
-	output, err := captureYTDLPOutput(cmd)
-	if err != nil {
-		return "", "", "", 0, fmt.Errorf("resolving audio with yt-dlp: %w: %s", err, strings.TrimSpace(output))
-	}
+		output, err := captureYTDLPOutput(cmd)
+		if err != nil {
+			lastErr = fmt.Errorf("resolving audio with yt-dlp: %w: %s", err, strings.TrimSpace(output))
+			continue
+		}
 
-	title, thumbnail, pageURL, durationSec, err = parseYTDLPMetadataJSON(output)
-	if err != nil {
-		return "", "", "", 0, fmt.Errorf("parsing yt-dlp metadata: %w", err)
+		title, thumbnail, pageURL, durationSec, err = parseYTDLPMetadataJSON(output)
+		if err != nil {
+			lastErr = fmt.Errorf("parsing yt-dlp metadata: %w", err)
+			continue
+		}
+		return title, thumbnail, pageURL, durationSec, nil
 	}
-	return title, thumbnail, pageURL, durationSec, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("yt-dlp metadata lookup failed")
+	}
+	return "", "", "", 0, lastErr
 }
 
 func min(a, b int) int {

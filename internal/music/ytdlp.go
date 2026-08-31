@@ -2,16 +2,36 @@ package music
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
 const ytdlpCacheDir = "/tmp/yt-dlp-cache"
+
+var youtubeMetadataClients = []string{
+	"android,tv_embedded,web",
+	"tv_embedded",
+	"android",
+}
+
+var youtubeStreamClients = []string{
+	"android",
+	"tv_embedded",
+	"android,tv_embedded",
+	"web",
+}
+
+var youtubeStreamFormats = []string{
+	"ba/b/w",
+	"bestaudio/best/b/worst",
+	"b/w",
+}
 
 // YTDLP holds yt-dlp binary settings shared by the resolver and stream proxy.
 type YTDLP struct {
@@ -47,21 +67,67 @@ func PrepareCookiesFile(readOnlyPath string) (string, error) {
 	return dst, nil
 }
 
-func (y YTDLP) commonArgs() []string {
-	args := []string{
+func (y YTDLP) baseArgs() []string {
+	return []string{
 		"--no-playlist",
 		"--no-warnings",
 		"--no-progress",
 		"--cache-dir", ytdlpCacheDir,
 		"--js-runtimes", "node:/usr/bin/node",
-		"--extractor-args", "youtube:player_client=android,web,mweb",
 	}
+}
+
+func (y YTDLP) commonArgs() []string {
+	return y.argsForYouTubeClients(youtubeMetadataClients[0])
+}
+
+func (y YTDLP) argsForYouTubeClients(clients string) []string {
+	args := append(y.baseArgs(), "--extractor-args", "youtube:player_client="+clients)
 	if y.CookiesFile != "" {
 		if _, err := os.Stat(y.CookiesFile); err == nil {
 			args = append(args, "--cookies", y.CookiesFile)
 		}
 	}
 	return args
+}
+
+// ResolveStreamURL finds a direct media URL for ffmpeg using several YouTube clients.
+// mweb is intentionally excluded — it often returns storyboard-only formats on cloud IPs.
+func (y YTDLP) ResolveStreamURL(ctx context.Context, target string) (string, error) {
+	var lastErr error
+	for _, clients := range youtubeStreamClients {
+		for _, format := range youtubeStreamFormats {
+			args := append(y.argsForYouTubeClients(clients),
+				"--socket-timeout", "30",
+				"-f", format,
+				"--get-url",
+				target,
+			)
+			cmd := exec.CommandContext(ctx, y.binary(), args...)
+			output, err := captureYTDLPOutput(cmd)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if mediaURL := firstHTTPURL(output); mediaURL != "" {
+				return mediaURL, nil
+			}
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("yt-dlp returned no stream URL")
+	}
+	return "", fmt.Errorf("yt-dlp stream URL lookup failed: %w", lastErr)
+}
+
+func firstHTTPURL(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {
+			return line
+		}
+	}
+	return ""
 }
 
 func captureYTDLPOutput(cmd *exec.Cmd) (string, error) {

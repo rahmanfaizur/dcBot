@@ -102,50 +102,36 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 
-	ytdlpArgs := append(p.ytdlp.commonArgs(),
-		"--socket-timeout", "30",
-		"-f", "bestaudio/best/b/worst",
-		"-o", "-",
-		target,
-	)
-	ytdlp := exec.CommandContext(r.Context(), p.ytdlp.binary(), ytdlpArgs...)
-
-	ytdlpStdout, err := ytdlp.StdoutPipe()
+	mediaURL, err := p.ytdlp.ResolveStreamURL(r.Context(), target)
 	if err != nil {
-		p.logger.Error("creating yt-dlp stdout pipe", "error", err)
-		http.Error(w, "stream setup failed", http.StatusInternalServerError)
+		p.logger.Warn("yt-dlp stream URL lookup failed", "error", err, "target", target)
+		http.Error(w, "stream setup failed", http.StatusBadGateway)
 		return
 	}
-	var ytdlpErr bytes.Buffer
-	ytdlp.Stderr = &ytdlpErr
 
 	ffmpeg := exec.CommandContext(r.Context(), p.ffmpegPath,
 		"-nostdin",
 		"-loglevel", "error",
-		"-i", "pipe:0",
+		"-reconnect", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "5",
+		"-i", mediaURL,
 		"-f", "mp3",
 		"-ab", "128k",
 		"pipe:1",
 	)
-	ffmpeg.Stdin = ytdlpStdout
-	ffmpeg.Stderr = io.Discard
-
-	if err := ytdlp.Start(); err != nil {
-		p.logger.Error("starting yt-dlp stream", "error", err, "target", target)
-		http.Error(w, "stream setup failed", http.StatusInternalServerError)
-		return
-	}
+	var ffmpegErr bytes.Buffer
+	ffmpeg.Stderr = &ffmpegErr
 
 	ffmpegStdout, err := ffmpeg.StdoutPipe()
 	if err != nil {
-		_ = ytdlp.Process.Kill()
+		p.logger.Error("creating ffmpeg stdout pipe", "error", err, "target", target)
 		http.Error(w, "stream setup failed", http.StatusInternalServerError)
 		return
 	}
 
 	if err := ffmpeg.Start(); err != nil {
-		_ = ytdlp.Process.Kill()
-		p.logger.Error("starting ffmpeg stream", "error", err)
+		p.logger.Error("starting ffmpeg stream", "error", err, "target", target)
 		http.Error(w, "stream setup failed", http.StatusInternalServerError)
 		return
 	}
@@ -154,15 +140,14 @@ func (p *StreamProxy) handleStream(w http.ResponseWriter, r *http.Request) {
 		p.logger.Warn("stream copy ended", "error", err, "target", target)
 	}
 
-	if err := ytdlp.Wait(); err != nil {
-		stderr := strings.TrimSpace(ytdlpErr.String())
+	if err := ffmpeg.Wait(); err != nil {
+		stderr := strings.TrimSpace(ffmpegErr.String())
 		if stderr != "" {
-			p.logger.Warn("yt-dlp stream exited", "error", err, "stderr", stderr, "target", target)
+			p.logger.Warn("ffmpeg stream exited", "error", err, "stderr", stderr, "target", target)
 		} else {
-			p.logger.Warn("yt-dlp stream exited", "error", err, "target", target)
+			p.logger.Warn("ffmpeg stream exited", "error", err, "target", target)
 		}
 	}
-	_ = ffmpeg.Wait()
 }
 
 func randomStreamID() string {
