@@ -57,7 +57,7 @@ func Load() (Config, error) {
 		cfg.LogLevel = "info"
 	}
 	if cfg.APIAddr == "" {
-		cfg.APIAddr = "127.0.0.1:8787"
+		cfg.APIAddr = "0.0.0.0:8787"
 	}
 
 	return cfg, nil

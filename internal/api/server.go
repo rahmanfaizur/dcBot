@@ -23,7 +23,7 @@ type Server struct {
 // New creates an API server bound to addr (e.g. 127.0.0.1:8787).
 func New(logger *slog.Logger, st *store.Store, addr string) *Server {
 	if addr == "" {
-		addr = "127.0.0.1:8787"
+		addr = "0.0.0.0:8787"
 	}
 	s := &Server{logger: logger, store: st, addr: addr}
 	mux := http.NewServeMux()

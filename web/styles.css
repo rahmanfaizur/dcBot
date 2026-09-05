@@ -210,6 +210,14 @@ code {
   place-items: center;
 }
 
+.deck {
+  position: relative;
+  width: min(78vw, 20rem);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
 .glow {
   position: absolute;
   border-radius: 50%;
@@ -237,16 +245,17 @@ code {
 
 .vinyl {
   position: relative;
-  width: min(70vw, 18rem);
+  width: 100%;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
-    radial-gradient(circle at center, #ffd0e0 0 18%, #2b1620 19% 22%, transparent 23%),
+    radial-gradient(circle at center, #ffd0e0 0 16%, #2b1620 17% 20%, transparent 21%),
     repeating-radial-gradient(circle at center, #1c1822 0 2px, #2a2431 3px 5px);
   box-shadow:
     0 30px 80px rgba(0, 0, 0, 0.45),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
-  animation: spin 28s linear infinite;
+  animation: spin 14s linear infinite;
+  will-change: transform;
 }
 
 .vinyl-ring {
@@ -266,6 +275,65 @@ code {
   font-weight: 700;
   color: #2b1620;
   background: linear-gradient(135deg, var(--pink), var(--peach));
+}
+
+.tonearm {
+  position: absolute;
+  top: 4%;
+  right: 2%;
+  width: 42%;
+  height: 58%;
+  transform-origin: 88% 12%;
+  animation: tonearm-sway 6s ease-in-out infinite;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.tonearm-pivot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #f6f1f4, #8a8497);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.tonearm-beam {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 0.22rem;
+  height: 78%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e8e0ea, #9a92a4);
+  transform: rotate(28deg);
+  transform-origin: top center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.tonearm-head {
+  position: absolute;
+  left: 8%;
+  bottom: 8%;
+  width: 1.35rem;
+  height: 0.85rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(135deg, var(--peach), var(--pink));
+  box-shadow: 0 4px 14px rgba(255, 107, 157, 0.35);
+  transform: rotate(28deg);
+}
+
+.tonearm-head::after {
+  content: "";
+  position: absolute;
+  left: 42%;
+  bottom: -0.35rem;
+  width: 0.12rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #f6f1f4;
 }
 
 .commands,
@@ -521,6 +589,16 @@ code {
   }
 }
 
+@keyframes tonearm-sway {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -578,6 +656,7 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .atmosphere,
   .vinyl,
+  .tonearm,
   .glow,
   .brand-hero,
   .lede,
