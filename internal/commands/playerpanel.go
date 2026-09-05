@@ -18,9 +18,10 @@ const playerComponentPrefix = "music:"
 
 // PlayerPanel keeps a single now-playing message per guild with control buttons.
 type PlayerPanel struct {
-	logger *slog.Logger
-	svc    *music.Service
-	ai     *ai.Client
+	logger  *slog.Logger
+	svc     *music.Service
+	ai      *ai.Client
+	suggest *SuggestStore
 
 	mu    sync.Mutex
 	panel map[string]panelRef
@@ -34,13 +35,22 @@ type panelRef struct {
 // NewPlayerPanel creates a panel manager wired to playback events.
 func NewPlayerPanel(logger *slog.Logger, svc *music.Service, aiClient *ai.Client) *PlayerPanel {
 	p := &PlayerPanel{
-		logger: logger,
-		svc:    svc,
-		ai:     aiClient,
-		panel:  make(map[string]panelRef),
+		logger:  logger,
+		svc:     svc,
+		ai:      aiClient,
+		suggest: NewSuggestStore(),
+		panel:   make(map[string]panelRef),
 	}
 	svc.SetPlaybackListener(p.onPlaybackEvent)
 	return p
+}
+
+// SuggestStore returns the AI play-button store (shared with /ask and /vibe).
+func (p *PlayerPanel) SuggestStore() *SuggestStore {
+	if p == nil {
+		return nil
+	}
+	return p.suggest
 }
 
 // PublishFromInteraction sets the now-playing panel from a slash command response.
@@ -74,6 +84,8 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 
 	action := componentAction(customID)
 	switch action {
+	case "aiplay":
+		return p.handleAIPlay(ctx, s, i, customID)
 	case "queue":
 		return respondQueueManage(s, i, p.svc)
 	case "fact":

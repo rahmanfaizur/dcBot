@@ -16,7 +16,7 @@ import (
 const (
 	defaultModel = "qwen/qwen3.8-27b"
 	apiURL       = "https://api.groq.com/openai/v1/chat/completions"
-	maxTokens    = 400
+	maxTokens    = 700
 	cooldown     = 10 * time.Second
 )
 
@@ -136,6 +136,81 @@ func (c *Client) Chat(ctx context.Context, system, user string) (string, error) 
 		return "", fmt.Errorf("empty AI response")
 	}
 	return truncateDiscord(text), nil
+}
+
+// TrackPick is a playable song suggestion from the model.
+type TrackPick struct {
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+	Query  string `json:"query"`
+}
+
+// Reply is a chat message plus optional playable tracks.
+type Reply struct {
+	Message string      `json:"message"`
+	Tracks  []TrackPick `json:"tracks"`
+}
+
+// Suggest asks the model for JSON: {message, tracks[]} so Discord can attach play buttons.
+func (c *Client) Suggest(ctx context.Context, system, user string) (Reply, error) {
+	raw, err := c.Chat(ctx, system, user)
+	if err != nil {
+		return Reply{}, err
+	}
+	reply, err := parseReplyJSON(raw)
+	if err != nil {
+		// Model ignored JSON — still show the text, no buttons.
+		return Reply{Message: raw}, nil
+	}
+	reply.Message = truncateDiscord(strings.TrimSpace(reply.Message))
+	if reply.Message == "" {
+		reply.Message = raw
+	}
+	cleaned := make([]TrackPick, 0, len(reply.Tracks))
+	for _, t := range reply.Tracks {
+		t.Title = strings.TrimSpace(t.Title)
+		t.Artist = strings.TrimSpace(t.Artist)
+		t.Query = strings.TrimSpace(t.Query)
+		if t.Query == "" {
+			t.Query = strings.TrimSpace(t.Artist + " " + t.Title)
+		}
+		if t.Title == "" && t.Query == "" {
+			continue
+		}
+		if t.Title == "" {
+			t.Title = t.Query
+		}
+		cleaned = append(cleaned, t)
+		if len(cleaned) >= 5 {
+			break
+		}
+	}
+	reply.Tracks = cleaned
+	return reply, nil
+}
+
+func parseReplyJSON(raw string) (Reply, error) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "```") {
+		raw = strings.TrimPrefix(raw, "```json")
+		raw = strings.TrimPrefix(raw, "```JSON")
+		raw = strings.TrimPrefix(raw, "```")
+		if i := strings.LastIndex(raw, "```"); i >= 0 {
+			raw = raw[:i]
+		}
+		raw = strings.TrimSpace(raw)
+	}
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return Reply{}, fmt.Errorf("no json object")
+	}
+	raw = raw[start : end+1]
+	var reply Reply
+	if err := json.Unmarshal([]byte(raw), &reply); err != nil {
+		return Reply{}, err
+	}
+	return reply, nil
 }
 
 // PolishFact turns a Wikipedia/raw fact into a short Discord-friendly line.

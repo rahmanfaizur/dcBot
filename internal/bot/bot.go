@@ -44,6 +44,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 
 	registry := commands.NewRegistry(logger)
 	registry.Register(commands.PingCommand())
+	registry.Register(commands.HelpCommand())
 
 	b := &Bot{
 		cfg:      cfg,
@@ -113,14 +114,14 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 		for _, cmd := range commands.MusicCommands(b.music, panel) {
 			registry.Register(cmd)
 		}
-		for _, cmd := range commands.AICommands(aiClient, b.music) {
+		for _, cmd := range commands.AICommands(aiClient, b.music, panel) {
 			registry.Register(cmd)
 		}
 	} else {
 		logger.Warn("music disabled: set LINKDAVE_URL and LINKDAVE_PASSWORD to enable voice commands")
 		if aiClient := ai.New(cfg.GroqAPIKey, cfg.GroqModel); aiClient != nil {
 			logger.Info("groq AI enabled")
-			for _, cmd := range commands.AICommands(aiClient, nil) {
+			for _, cmd := range commands.AICommands(aiClient, nil, nil) {
 				registry.Register(cmd)
 			}
 		}
