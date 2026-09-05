@@ -63,8 +63,16 @@ func preparingDescription(query string) string {
 	return fmt.Sprintf("**%s**\n\n%s", label, randomPreparingLine())
 }
 
-func songFactEmbed(ctx context.Context, track music.ResolvedTrack, requester string) *discordgo.MessageEmbed {
+func songFactEmbed(ctx context.Context, track music.ResolvedTrack, requester string, aiClient interface {
+	Enabled() bool
+	PolishFact(context.Context, string, string, string) (string, error)
+}) *discordgo.MessageEmbed {
 	fact := music.SongFact(ctx, track.Artist, track.Title, track.DurationSec, requester)
+	if aiClient != nil && aiClient.Enabled() && fact != "" {
+		if polished, err := aiClient.PolishFact(ctx, track.Artist, track.Title, fact); err == nil && polished != "" {
+			fact = polished
+		}
+	}
 	embed := &discordgo.MessageEmbed{
 		Color:       colorFunFact,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FUN FACT"},

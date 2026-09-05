@@ -26,6 +26,7 @@ type PlaybackState struct {
 	Upcoming       int
 	Paused         bool
 	ElapsedSec     int
+	Loop           LoopMode
 	VoteSkipCount  int
 	VoteSkipNeeded int
 }
@@ -51,6 +52,9 @@ type Service struct {
 	frozenElapsed map[string]int
 
 	store *store.Store
+
+	leaveMu     sync.Mutex
+	leaveTimers map[string]*time.Timer
 }
 
 // NewService creates a music service.
@@ -62,6 +66,7 @@ func NewService(logger *slog.Logger, client *linkdave.Client, resolver *Resolver
 		queues:        make(map[string]*Queue),
 		playbackStart: make(map[string]time.Time),
 		frozenElapsed: make(map[string]int),
+		leaveTimers:   make(map[string]*time.Timer),
 	}
 
 	for _, guildID := range client.GuildIDs() {
@@ -92,6 +97,7 @@ func (s *Service) PlaybackState(guildID string) PlaybackState {
 	state := PlaybackState{
 		Upcoming: len(upcoming),
 		Paused:   player.State() == linkdave.PlayerStatePaused || s.isPlaybackPaused(guildID),
+		Loop:     s.queue(guildID).Loop(),
 	}
 	if now != nil {
 		copy := *now
@@ -188,6 +194,7 @@ func (s *Service) emitPlayback(guildID string, refreshOnly bool) {
 		fn(PlaybackEvent{GuildID: guildID, Session: session, RefreshOnly: refreshOnly})
 	}
 	s.persistGuild(guildID, session)
+	s.syncPresence(session)
 }
 
 func (s *Service) persistGuild(guildID string, session *discordgo.Session) {
@@ -198,9 +205,15 @@ func (s *Service) persistGuild(guildID string, session *discordgo.Session) {
 	state := s.PlaybackState(guildID)
 	snap := s.Snapshot(guildID)
 	doc := store.GuildPlayback{
-		GuildID:  guildID,
-		Paused:   state.Paused,
-		Upcoming: make([]store.Track, 0, len(snap.Upcoming)),
+		GuildID:    guildID,
+		Paused:     state.Paused,
+		ElapsedSec: state.ElapsedSec,
+		Upcoming:   make([]store.Track, 0, len(snap.Upcoming)),
+	}
+	if !state.Paused {
+		if start, ok := s.playbackStartUTC(guildID); ok {
+			doc.StartedAt = &start
+		}
 	}
 	if session != nil {
 		if g, err := session.State.Guild(guildID); err == nil && g != nil {
@@ -230,6 +243,82 @@ func queueItemToStoreTrack(item QueueItem) store.Track {
 		PageURL:     item.PageURL,
 		DurationSec: item.DurationSec,
 		Requester:   item.RequesterName,
+	}
+}
+
+func (s *Service) playbackStartUTC(guildID string) (time.Time, bool) {
+	s.clockMu.Lock()
+	defer s.clockMu.Unlock()
+	if _, frozen := s.frozenElapsed[guildID]; frozen {
+		return time.Time{}, false
+	}
+	start, ok := s.playbackStart[guildID]
+	if !ok {
+		return time.Time{}, false
+	}
+	return start.UTC(), true
+}
+
+// Shuffle randomizes the upcoming queue.
+func (s *Service) Shuffle(guildID string) (int, error) {
+	q := s.queue(guildID)
+	if q.Len() < 2 {
+		return q.Len(), fmt.Errorf("need at least 2 tracks in the queue to shuffle")
+	}
+	q.ShuffleUpcoming()
+	s.emitPlayback(guildID, true)
+	return q.Len(), nil
+}
+
+// SetLoop changes the guild loop mode.
+func (s *Service) SetLoop(guildID string, mode LoopMode) LoopMode {
+	s.queue(guildID).SetLoop(mode)
+	s.emitPlayback(guildID, true)
+	return mode
+}
+
+// Loop returns the guild loop mode.
+func (s *Service) Loop(guildID string) LoopMode {
+	return s.queue(guildID).Loop()
+}
+
+// Clear stops playback and empties the queue but stays in voice.
+func (s *Service) Clear(ctx context.Context, guildID string) error {
+	s.queue(guildID).Clear()
+	s.clearPlaybackClock(guildID)
+	s.clearVoteSkip(guildID)
+	player := s.linkdave.Player(guildID)
+	if player.State() == linkdave.PlayerStatePlaying || player.State() == linkdave.PlayerStatePaused {
+		if err := player.Stop(ctx); err != nil {
+			return err
+		}
+	}
+	s.emitPlayback(guildID, false)
+	return nil
+}
+
+// ParseLoopMode maps slash option strings to LoopMode.
+func ParseLoopMode(raw string) (LoopMode, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "":
+		return LoopOff, nil
+	case "track", "song":
+		return LoopTrack, nil
+	case "queue", "all":
+		return LoopQueue, nil
+	default:
+		return LoopOff, fmt.Errorf("use off, track, or queue")
+	}
+}
+
+func LoopModeLabel(mode LoopMode) string {
+	switch mode {
+	case LoopTrack:
+		return "track"
+	case LoopQueue:
+		return "queue"
+	default:
+		return "off"
 	}
 }
 func (s *Service) Join(ctx context.Context, session *discordgo.Session, botUserID, guildID, channelID string) error {
@@ -471,21 +560,170 @@ func (s *Service) onTrackEnd(guildID, reason string) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	player := s.linkdave.Player(guildID)
+
+	if queue.Loop() == LoopTrack {
+		if current, ok := queue.NowCopy(); ok {
+			if err := player.Play(ctx, current.StreamURL, current.RequesterID); err != nil {
+				s.logger.Error("looping current track", "guild_id", guildID, "error", err)
+				queue.Clear()
+				s.clearPlaybackClock(guildID)
+				s.emitPlayback(guildID, false)
+				return
+			}
+			s.markPlaybackStart(guildID)
+			s.emitPlayback(guildID, false)
+			return
+		}
+	}
+
+	if queue.Loop() == LoopQueue {
+		if finished, ok := queue.NowCopy(); ok {
+			queue.Enqueue(finished)
+		}
+	}
+
 	next, ok := queue.Advance()
 	if !ok {
+		s.clearPlaybackClock(guildID)
+		s.emitPlayback(guildID, false)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	player := s.linkdave.Player(guildID)
 	if err := player.Play(ctx, next.StreamURL, next.RequesterID); err != nil {
 		s.logger.Error("playing next queued track", "guild_id", guildID, "error", err)
 		queue.Clear()
 		s.clearPlaybackClock(guildID)
+		s.emitPlayback(guildID, false)
 	} else {
 		s.markPlaybackStart(guildID)
 		s.emitPlayback(guildID, false)
 	}
+}
+
+func (s *Service) syncPresence(session *discordgo.Session) {
+	if session == nil {
+		return
+	}
+	s.mu.Lock()
+	guildIDs := make([]string, 0, len(s.queues))
+	for id := range s.queues {
+		guildIDs = append(guildIDs, id)
+	}
+	s.mu.Unlock()
+
+	var label string
+	for _, guildID := range guildIDs {
+		state := s.PlaybackState(guildID)
+		if state.Now == nil {
+			continue
+		}
+		title := strings.TrimSpace(state.Now.Title)
+		artist := strings.TrimSpace(state.Now.Artist)
+		switch {
+		case title != "" && artist != "":
+			label = title + " — " + artist
+		case title != "":
+			label = title
+		default:
+			label = "music"
+		}
+		break
+	}
+
+	status := "online"
+	activities := []*discordgo.Activity{}
+	if label != "" {
+		if len([]rune(label)) > 120 {
+			r := []rune(label)
+			label = string(r[:117]) + "…"
+		}
+		activities = []*discordgo.Activity{{
+			Name: label,
+			Type: discordgo.ActivityTypeListening,
+		}}
+	} else {
+		activities = []*discordgo.Activity{{
+			Name: "soft nights · /play",
+			Type: discordgo.ActivityTypeListening,
+		}}
+	}
+	_ = session.UpdateStatusComplex(discordgo.UpdateStatusData{
+		Status:     status,
+		Activities: activities,
+	})
+}
+
+const autoLeaveAfter = 60 * time.Second
+
+// ConsiderAutoLeave starts/cancels a timer when the bot is alone in voice.
+func (s *Service) ConsiderAutoLeave(session *discordgo.Session, guildID string) {
+	if session == nil || guildID == "" || session.State == nil || session.State.User == nil {
+		return
+	}
+	botID := session.State.User.ID
+	channelID := BotVoiceChannel(session, guildID, botID)
+	if channelID == "" {
+		s.cancelAutoLeave(guildID)
+		return
+	}
+	if humansInVoice(session, guildID, channelID, botID) > 0 {
+		s.cancelAutoLeave(guildID)
+		return
+	}
+
+	s.leaveMu.Lock()
+	defer s.leaveMu.Unlock()
+	if existing, ok := s.leaveTimers[guildID]; ok {
+		existing.Stop()
+	}
+	s.leaveTimers[guildID] = time.AfterFunc(autoLeaveAfter, func() {
+		s.leaveMu.Lock()
+		delete(s.leaveTimers, guildID)
+		s.leaveMu.Unlock()
+
+		if BotVoiceChannel(session, guildID, botID) == "" {
+			return
+		}
+		if humansInVoice(session, guildID, channelID, botID) > 0 {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := s.Leave(ctx, session, botID, guildID); err != nil {
+			s.logger.Warn("auto-leave failed", "guild_id", guildID, "error", err)
+			return
+		}
+		s.logger.Info("auto-left empty voice channel", "guild_id", guildID)
+	})
+}
+
+func (s *Service) cancelAutoLeave(guildID string) {
+	s.leaveMu.Lock()
+	defer s.leaveMu.Unlock()
+	if t, ok := s.leaveTimers[guildID]; ok {
+		t.Stop()
+		delete(s.leaveTimers, guildID)
+	}
+}
+
+func humansInVoice(session *discordgo.Session, guildID, channelID, botUserID string) int {
+	guild, err := session.State.Guild(guildID)
+	if err != nil || guild == nil {
+		return 0
+	}
+	count := 0
+	for _, vs := range guild.VoiceStates {
+		if vs.ChannelID != channelID || vs.UserID == botUserID {
+			continue
+		}
+		member, err := session.State.Member(guildID, vs.UserID)
+		if err == nil && member != nil && member.User != nil && member.User.Bot {
+			continue
+		}
+		count++
+	}
+	return count
 }

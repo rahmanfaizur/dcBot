@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/faizur/mybot/internal/ai"
 	"github.com/faizur/mybot/internal/api"
 	"github.com/faizur/mybot/internal/commands"
 	"github.com/faizur/mybot/internal/config"
@@ -103,13 +104,26 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 		if b.store != nil {
 			b.music.SetStore(b.store)
 		}
-		panel := commands.NewPlayerPanel(logger, b.music)
+		aiClient := ai.New(cfg.GroqAPIKey, cfg.GroqModel)
+		if aiClient != nil {
+			logger.Info("groq AI enabled")
+		}
+		panel := commands.NewPlayerPanel(logger, b.music, aiClient)
 		registry.SetComponentHandler(panel.HandleComponent)
 		for _, cmd := range commands.MusicCommands(b.music, panel) {
 			registry.Register(cmd)
 		}
+		for _, cmd := range commands.AICommands(aiClient, b.music) {
+			registry.Register(cmd)
+		}
 	} else {
 		logger.Warn("music disabled: set LINKDAVE_URL and LINKDAVE_PASSWORD to enable voice commands")
+		if aiClient := ai.New(cfg.GroqAPIKey, cfg.GroqModel); aiClient != nil {
+			logger.Info("groq AI enabled")
+			for _, cmd := range commands.AICommands(aiClient, nil) {
+				registry.Register(cmd)
+			}
+		}
 	}
 
 	if b.store != nil {
@@ -213,11 +227,13 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 	b.registry.HandleInteraction(context.Background(), s, i)
 }
 
-func (b *Bot) onVoiceStateUpdate(_ *discordgo.Session, vs *discordgo.VoiceStateUpdate) {
-	if b.linkdave == nil {
-		return
+func (b *Bot) onVoiceStateUpdate(s *discordgo.Session, vs *discordgo.VoiceStateUpdate) {
+	if b.linkdave != nil {
+		b.linkdave.HandleVoiceStateUpdate(vs)
 	}
-	b.linkdave.HandleVoiceStateUpdate(vs)
+	if b.music != nil && vs != nil {
+		b.music.ConsiderAutoLeave(s, vs.GuildID)
+	}
 }
 
 func (b *Bot) onVoiceServerUpdate(_ *discordgo.Session, vs *discordgo.VoiceServerUpdate) {

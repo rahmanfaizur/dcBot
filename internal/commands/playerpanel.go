@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/faizur/mybot/internal/ai"
 	"github.com/faizur/mybot/internal/music"
 )
 
@@ -19,6 +20,7 @@ const playerComponentPrefix = "music:"
 type PlayerPanel struct {
 	logger *slog.Logger
 	svc    *music.Service
+	ai     *ai.Client
 
 	mu    sync.Mutex
 	panel map[string]panelRef
@@ -30,10 +32,11 @@ type panelRef struct {
 }
 
 // NewPlayerPanel creates a panel manager wired to playback events.
-func NewPlayerPanel(logger *slog.Logger, svc *music.Service) *PlayerPanel {
+func NewPlayerPanel(logger *slog.Logger, svc *music.Service, aiClient *ai.Client) *PlayerPanel {
 	p := &PlayerPanel{
 		logger: logger,
 		svc:    svc,
+		ai:     aiClient,
 		panel:  make(map[string]panelRef),
 	}
 	svc.SetPlaybackListener(p.onPlaybackEvent)
@@ -81,10 +84,10 @@ func (p *PlayerPanel) HandleComponent(ctx context.Context, s *discordgo.Session,
 		if err := deferEphemeral(s, i); err != nil {
 			return err
 		}
-		factCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		factCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
 		track := queueItemToTrack(*state.Now)
-		return editDeferredEmbed(s, i, songFactEmbed(factCtx, track, state.Now.RequesterName))
+		return editDeferredEmbed(s, i, songFactEmbed(factCtx, track, state.Now.RequesterName, p.ai))
 	case "qremove", "qboost":
 		return p.handleQueueEdit(ctx, s, i, action)
 	case "voteskip":

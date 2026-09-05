@@ -27,13 +27,15 @@ type Track struct {
 
 // GuildPlayback is the live player state for one Discord server.
 type GuildPlayback struct {
-	GuildID    string    `bson:"_id" json:"guild_id"`
-	GuildName  string    `bson:"guild_name,omitempty" json:"guild_name,omitempty"`
-	Now        *Track    `bson:"now,omitempty" json:"now,omitempty"`
-	Upcoming   []Track   `bson:"upcoming" json:"upcoming"`
-	Paused     bool      `bson:"paused" json:"paused"`
-	UpcomingN  int       `bson:"upcoming_count" json:"upcoming_count"`
-	UpdatedAt  time.Time `bson:"updated_at" json:"updated_at"`
+	GuildID    string     `bson:"_id" json:"guild_id"`
+	GuildName  string     `bson:"guild_name,omitempty" json:"guild_name,omitempty"`
+	Now        *Track     `bson:"now,omitempty" json:"now,omitempty"`
+	Upcoming   []Track    `bson:"upcoming" json:"upcoming"`
+	Paused     bool       `bson:"paused" json:"paused"`
+	ElapsedSec int        `bson:"elapsed_sec,omitempty" json:"elapsed_sec"`
+	StartedAt  *time.Time `bson:"started_at,omitempty" json:"started_at,omitempty"`
+	UpcomingN  int        `bson:"upcoming_count" json:"upcoming_count"`
+	UpdatedAt  time.Time  `bson:"updated_at" json:"updated_at"`
 }
 
 // Store persists per-guild playback snapshots.

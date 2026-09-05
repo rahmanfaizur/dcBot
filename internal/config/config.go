@@ -22,6 +22,8 @@ type Config struct {
 	YTDLPProxy       string
 	MongoURI         string
 	APIAddr          string
+	GroqAPIKey       string
+	GroqModel        string
 	LogLevel         string
 }
 
@@ -46,6 +48,8 @@ func Load() (Config, error) {
 		YTDLPProxy:       strings.TrimSpace(os.Getenv("YTDLP_PROXY")),
 		MongoURI:         strings.TrimSpace(os.Getenv("MONGODB_URI")),
 		APIAddr:          strings.TrimSpace(os.Getenv("API_ADDR")),
+		GroqAPIKey:       strings.TrimSpace(os.Getenv("GROQ_API_KEY")),
+		GroqModel:        strings.TrimSpace(os.Getenv("GROQ_MODEL")),
 		LogLevel:         strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 	}
 

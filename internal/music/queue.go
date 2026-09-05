@@ -1,7 +1,17 @@
 package music
 
 import (
+	"math/rand/v2"
 	"sync"
+)
+
+// LoopMode controls what happens when a track ends.
+type LoopMode int
+
+const (
+	LoopOff   LoopMode = iota
+	LoopTrack          // repeat the current song
+	LoopQueue          // re-queue finished tracks
 )
 
 // QueueItem is one track waiting to play in a guild.
@@ -22,6 +32,7 @@ type Queue struct {
 	items  []QueueItem
 	now    *QueueItem
 	active bool
+	loop   LoopMode
 }
 
 // NewQueue creates an empty queue.
@@ -147,4 +158,41 @@ func (q *Queue) MoveUpcomingToFront(index int) (QueueItem, bool) {
 	q.items = append(q.items[:index-1], q.items[index:]...)
 	q.items = append([]QueueItem{item}, q.items...)
 	return item, true
+}
+
+// Loop returns the current loop mode.
+func (q *Queue) Loop() LoopMode {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.loop
+}
+
+// SetLoop sets the loop mode.
+func (q *Queue) SetLoop(mode LoopMode) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.loop = mode
+}
+
+// ShuffleUpcoming randomly reorders upcoming tracks. Returns false if fewer than 2.
+func (q *Queue) ShuffleUpcoming() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.items) < 2 {
+		return false
+	}
+	rand.Shuffle(len(q.items), func(i, j int) {
+		q.items[i], q.items[j] = q.items[j], q.items[i]
+	})
+	return true
+}
+
+// NowCopy returns a copy of the current track, if any.
+func (q *Queue) NowCopy() (QueueItem, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.now == nil {
+		return QueueItem{}, false
+	}
+	return *q.now, true
 }

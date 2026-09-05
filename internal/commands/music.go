@@ -79,6 +79,40 @@ func MusicCommands(svc *music.Service, panel *PlayerPanel) []Command {
 			},
 			Handler: resumeHandler(svc),
 		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "shuffle",
+				Description: "Shuffle the upcoming queue.",
+			},
+			Handler: shuffleHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "loop",
+				Description: "Set loop mode: off, track, or queue.",
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Type:        discordgo.ApplicationCommandOptionString,
+						Name:        "mode",
+						Description: "off, track, or queue",
+						Required:    true,
+						Choices: []*discordgo.ApplicationCommandOptionChoice{
+							{Name: "off", Value: "off"},
+							{Name: "track", Value: "track"},
+							{Name: "queue", Value: "queue"},
+						},
+					},
+				},
+			},
+			Handler: loopHandler(svc),
+		},
+		{
+			Definition: &discordgo.ApplicationCommand{
+				Name:        "clear",
+				Description: "Clear the queue and stop the current track.",
+			},
+			Handler: clearHandler(svc),
+		},
 	}
 }
 
@@ -220,6 +254,41 @@ func resumeHandler(svc *music.Service) Handler {
 			return respondEphemeral(s, i, music.FriendlyControlError(err))
 		}
 		return respondChannelEmbed(s, i, statusEmbed("Resumed", "Playback continued.", colorNowPlaying))
+	}
+}
+
+func shuffleHandler(svc *music.Service) Handler {
+	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		n, err := svc.Shuffle(i.GuildID)
+		if err != nil {
+			return respondEphemeral(s, i, err.Error())
+		}
+		return respondChannelEmbed(s, i, statusEmbed("Shuffled", fmt.Sprintf("Mixed up **%d** upcoming tracks.", n), colorQueued))
+	}
+}
+
+func loopHandler(svc *music.Service) Handler {
+	return func(_ context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		mode, err := music.ParseLoopMode(optionString(i, "mode"))
+		if err != nil {
+			return respondEphemeral(s, i, err.Error())
+		}
+		svc.SetLoop(i.GuildID, mode)
+		msg := map[music.LoopMode]string{
+			music.LoopOff:   "Loop is **off**.",
+			music.LoopTrack: "Looping the **current track**.",
+			music.LoopQueue: "Looping the **whole queue**.",
+		}[mode]
+		return respondChannelEmbed(s, i, statusEmbed("Loop", msg, colorNowPlaying))
+	}
+}
+
+func clearHandler(svc *music.Service) Handler {
+	return func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+		if err := svc.Clear(ctx, i.GuildID); err != nil {
+			return respondEphemeral(s, i, music.FriendlyControlError(err))
+		}
+		return respondChannelEmbed(s, i, statusEmbed("Cleared", "Queue emptied and playback stopped.", colorIdle))
 	}
 }
 

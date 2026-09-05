@@ -92,7 +92,7 @@ func TestSongFactEmbed(t *testing.T) {
 		Title:       "Magnetic",
 		Artist:      "ILLIT",
 		DurationSec: 161,
-	}, "faizur")
+	}, "faizur", nil)
 	if embed.Author.Name != "FUN FACT" {
 		t.Fatalf("author: got %q", embed.Author.Name)
 	}

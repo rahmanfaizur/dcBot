@@ -27,6 +27,7 @@
       <nav class="topnav">
         <a href="#commands">Commands</a>
         <a href="#demo">Player</a>
+        <a href="#rooms">Live</a>
         <a class="nav-invite" id="invite-nav" href="#invite">Invite</a>
       </nav>
     </header>
@@ -88,6 +89,14 @@
             <span>Take a breath. Continue when you’re ready.</span>
           </li>
           <li>
+            <code>/shuffle</code> <code>/loop</code> <code>/clear</code>
+            <span>Mix the queue, repeat a track or the whole list, or wipe it.</span>
+          </li>
+          <li>
+            <code>/ask</code> <code>/vibe</code>
+            <span>Chat with FR — general questions, or music vibes about what’s playing.</span>
+          </li>
+          <li>
             <code>Fun Fact</code>
             <span>A little trivia about the song that’s playing.</span>
           </li>
@@ -97,7 +106,7 @@
       <section class="demo" id="demo">
         <div class="section-head">
           <h2>How it feels</h2>
-          <p>A preview of the player you’ll see in Discord — demo only.</p>
+          <p>Live from your Discord server when the bot is playing.</p>
         </div>
 
         <article class="player-card" id="demo-player">
@@ -137,6 +146,16 @@
             </div>
           </div>
         </article>
+      </section>
+
+      <section class="rooms" id="rooms">
+        <div class="section-head">
+          <h2>Rooms playing now</h2>
+          <p>Servers where FR Music is live — refreshed from the always-on VM.</p>
+        </div>
+        <ul class="rooms-list" id="rooms-list">
+          <li class="rooms-empty">Listening for a room…</li>
+        </ul>
       </section>
 
       <section class="invite" id="invite">
