@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -69,6 +70,7 @@ func askHandler(client *ai.Client) Handler {
 			prompt,
 		)
 		if err != nil {
+			slog.Warn("groq ask failed", "error", err)
 			return editDeferredEphemeral(s, i, "AI is taking a nap — try again in a moment.")
 		}
 		return editDeferredEmbed(s, i, aiEmbed("ASK", reply))
@@ -123,6 +125,7 @@ func vibeHandler(client *ai.Client, svc *music.Service) Handler {
 		defer cancel()
 		reply, err := client.Chat(aiCtx, system, user)
 		if err != nil {
+			slog.Warn("groq vibe failed", "error", err)
 			return editDeferredEphemeral(s, i, "Couldn't vibe right now — try again shortly.")
 		}
 		return editDeferredEmbed(s, i, aiEmbed("VIBE", reply))

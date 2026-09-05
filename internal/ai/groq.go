@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultModel = "llama-3.1-8b-instant"
+	defaultModel = "qwen/qwen3.8-27b"
 	apiURL       = "https://api.groq.com/openai/v1/chat/completions"
 	maxTokens    = 400
 	cooldown     = 10 * time.Second
@@ -117,7 +117,8 @@ func (c *Client) Chat(ctx context.Context, system, user string) (string, error) 
 	var parsed struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -128,6 +129,9 @@ func (c *Client) Chat(ctx context.Context, system, user string) (string, error) 
 		return "", fmt.Errorf("empty AI response")
 	}
 	text := strings.TrimSpace(parsed.Choices[0].Message.Content)
+	if text == "" {
+		text = strings.TrimSpace(parsed.Choices[0].Message.Reasoning)
+	}
 	if text == "" {
 		return "", fmt.Errorf("empty AI response")
 	}
