@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/faizur/mybot/internal/api"
 	"github.com/faizur/mybot/internal/commands"
 	"github.com/faizur/mybot/internal/config"
 	"github.com/faizur/mybot/internal/linkdave"
 	"github.com/faizur/mybot/internal/music"
+	"github.com/faizur/mybot/internal/store"
 )
 
 // Bot owns the Discord session and command registry for the process.
@@ -26,6 +28,8 @@ type Bot struct {
 	linkdave    *linkdave.Client
 	streamProxy *music.StreamProxy
 	music       *music.Service
+	store       *store.Store
+	api         *api.Server
 }
 
 // New creates a Bot from configuration and registers built-in commands.
@@ -45,6 +49,18 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 		logger:   logger,
 		session:  session,
 		registry: registry,
+	}
+
+	if cfg.MongoURI != "" {
+		mongoCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		st, err := store.Connect(mongoCtx, cfg.MongoURI)
+		cancel()
+		if err != nil {
+			logger.Warn("mongodb unavailable; live website sync disabled", "error", err)
+		} else {
+			b.store = st
+			logger.Info("mongodb connected")
+		}
 	}
 
 	if cfg.MusicEnabled() {
@@ -84,6 +100,9 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 		b.streamProxy = proxy
 		b.linkdave = ld
 		b.music = music.NewService(logger, ld, music.NewResolver(ytdlp, proxy))
+		if b.store != nil {
+			b.music.SetStore(b.store)
+		}
 		panel := commands.NewPlayerPanel(logger, b.music)
 		registry.SetComponentHandler(panel.HandleComponent)
 		for _, cmd := range commands.MusicCommands(b.music, panel) {
@@ -91,6 +110,10 @@ func New(cfg config.Config, logger *slog.Logger) (*Bot, error) {
 		}
 	} else {
 		logger.Warn("music disabled: set LINKDAVE_URL and LINKDAVE_PASSWORD to enable voice commands")
+	}
+
+	if b.store != nil {
+		b.api = api.New(logger, b.store, cfg.APIAddr)
 	}
 
 	session.AddHandler(b.onInteractionCreate)
@@ -132,6 +155,12 @@ func (b *Bot) Run(ctx context.Context) error {
 		}
 	}
 
+	if b.api != nil {
+		if err := b.api.Start(); err != nil {
+			b.logger.Warn("public api failed to start", "error", err)
+		}
+	}
+
 	b.logger.Info("bot is online", "user", b.session.State.User.Username)
 
 	<-ctx.Done()
@@ -140,6 +169,12 @@ func (b *Bot) Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	if b.api != nil {
+		_ = b.api.Shutdown(shutdownCtx)
+	}
+	if b.store != nil {
+		_ = b.store.Close(shutdownCtx)
+	}
 	if b.linkdave != nil {
 		b.linkdave.DisconnectAll(shutdownCtx)
 		_ = b.linkdave.Close()

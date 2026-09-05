@@ -20,6 +20,8 @@ type Config struct {
 	FFMPEGPath       string
 	YTDLPCookiesFile string
 	YTDLPProxy       string
+	MongoURI         string
+	APIAddr          string
 	LogLevel         string
 }
 
@@ -42,6 +44,8 @@ func Load() (Config, error) {
 		FFMPEGPath:       resolveFFMPEGPath(strings.TrimSpace(os.Getenv("FFMPEG_PATH"))),
 		YTDLPCookiesFile: strings.TrimSpace(os.Getenv("YTDLP_COOKIES_FILE")),
 		YTDLPProxy:       strings.TrimSpace(os.Getenv("YTDLP_PROXY")),
+		MongoURI:         strings.TrimSpace(os.Getenv("MONGODB_URI")),
+		APIAddr:          strings.TrimSpace(os.Getenv("API_ADDR")),
 		LogLevel:         strings.TrimSpace(os.Getenv("LOG_LEVEL")),
 	}
 
@@ -51,6 +55,9 @@ func Load() (Config, error) {
 
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
+	}
+	if cfg.APIAddr == "" {
+		cfg.APIAddr = "127.0.0.1:8787"
 	}
 
 	return cfg, nil

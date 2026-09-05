@@ -10,6 +10,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/faizur/mybot/internal/linkdave"
+	"github.com/faizur/mybot/internal/store"
 )
 
 // PlaybackEvent notifies UI layers about queue and transport changes.
@@ -48,6 +49,8 @@ type Service struct {
 	clockMu       sync.Mutex
 	playbackStart map[string]time.Time
 	frozenElapsed map[string]int
+
+	store *store.Store
 }
 
 // NewService creates a music service.
@@ -171,15 +174,63 @@ func (s *Service) isPlaybackPaused(guildID string) bool {
 	return ok
 }
 
+// SetStore attaches Mongo persistence for live website snapshots.
+func (s *Service) SetStore(st *store.Store) {
+	s.store = st
+}
+
 func (s *Service) emitPlayback(guildID string, refreshOnly bool) {
 	s.listenerMu.Lock()
 	fn := s.listener
 	session := s.session
 	s.listenerMu.Unlock()
-	if fn == nil {
+	if fn != nil {
+		fn(PlaybackEvent{GuildID: guildID, Session: session, RefreshOnly: refreshOnly})
+	}
+	s.persistGuild(guildID, session)
+}
+
+func (s *Service) persistGuild(guildID string, session *discordgo.Session) {
+	if s.store == nil || guildID == "" {
 		return
 	}
-	fn(PlaybackEvent{GuildID: guildID, Session: session, RefreshOnly: refreshOnly})
+
+	state := s.PlaybackState(guildID)
+	snap := s.Snapshot(guildID)
+	doc := store.GuildPlayback{
+		GuildID:  guildID,
+		Paused:   state.Paused,
+		Upcoming: make([]store.Track, 0, len(snap.Upcoming)),
+	}
+	if session != nil {
+		if g, err := session.State.Guild(guildID); err == nil && g != nil {
+			doc.GuildName = g.Name
+		}
+	}
+	if snap.Now != nil {
+		t := queueItemToStoreTrack(*snap.Now)
+		doc.Now = &t
+	}
+	for _, item := range snap.Upcoming {
+		doc.Upcoming = append(doc.Upcoming, queueItemToStoreTrack(item))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.store.UpsertGuildPlayback(ctx, doc); err != nil {
+		s.logger.Warn("persisting guild playback", "guild_id", guildID, "error", err)
+	}
+}
+
+func queueItemToStoreTrack(item QueueItem) store.Track {
+	return store.Track{
+		Title:       item.Title,
+		Artist:      item.Artist,
+		Thumbnail:   item.Thumbnail,
+		PageURL:     item.PageURL,
+		DurationSec: item.DurationSec,
+		Requester:   item.RequesterName,
+	}
 }
 func (s *Service) Join(ctx context.Context, session *discordgo.Session, botUserID, guildID, channelID string) error {
 	if channelID == "" {

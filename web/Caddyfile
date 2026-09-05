@@ -1,8 +1,15 @@
 music.frlabs.me {
 	encode gzip
-	root * /srv
-	file_server
-	try_files {path} /index.html
+
+	handle /api/* {
+		reverse_proxy host.docker.internal:8787
+	}
+
+	handle {
+		root * /srv
+		file_server
+		try_files {path} /index.html
+	}
 
 	header {
 		X-Content-Type-Options nosniff

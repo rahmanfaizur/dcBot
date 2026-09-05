@@ -81,6 +81,7 @@ func (s *Service) enqueueItems(ctx context.Context, guildID string, items []Queu
 		for _, item := range items {
 			queue.Enqueue(item)
 		}
+		s.persistGuild(guildID, s.session)
 		return false, nil
 	}
 
@@ -96,6 +97,7 @@ func (s *Service) enqueueItems(ctx context.Context, guildID string, items []Queu
 		queue.Enqueue(item)
 	}
 	s.markPlaybackStart(guildID)
+	s.persistGuild(guildID, s.session)
 	return true, nil
 }
 
