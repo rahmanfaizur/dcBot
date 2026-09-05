@@ -22,30 +22,32 @@ const (
 	colorFunFact    = 0xF9A8D4
 
 	queueListPreviewLimit = 4
+	siteURL               = "https://music.frlabs.me"
+	siteFooterLabel       = "music.frlabs.me"
 )
 
 func loadingEmbed(query string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorLoading,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FINDING TRACK"},
 		Description: loadingDescription(query),
-	}
+	}, "")
 }
 
 func preparingEmbed(query string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorLoading,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "PREPARING AUDIO"},
 		Description: preparingDescription(query),
-	}
+	}, "")
 }
 
 func idleEmbed() *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorIdle,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "PLAYER"},
 		Description: "**Nothing playing.**\nUse `/play` to start listening.",
-	}
+	}, "")
 }
 
 func nowPlayingEmbed(track music.ResolvedTrack, requester string, state music.PlaybackState) *discordgo.MessageEmbed {
@@ -74,16 +76,29 @@ func nowPlayingEmbed(track music.ResolvedTrack, requester string, state music.Pl
 		embed.Image = &discordgo.MessageEmbedImage{URL: track.Thumbnail}
 	}
 
+	embed.Footer = &discordgo.MessageEmbedFooter{Text: playerFooter(requester, state.Upcoming)}
+	return embed
+}
+
+func playerFooter(requester string, upcoming int) string {
 	var footer []string
 	if requester != "" {
 		footer = append(footer, "Requested by "+requester)
 	}
-	if state.Upcoming > 0 {
-		footer = append(footer, fmt.Sprintf("%d in queue", state.Upcoming))
+	if upcoming > 0 {
+		footer = append(footer, fmt.Sprintf("%d in queue", upcoming))
 	}
-	if len(footer) > 0 {
-		embed.Footer = &discordgo.MessageEmbedFooter{Text: strings.Join(footer, " · ")}
+	footer = append(footer, siteFooterLabel)
+	return strings.Join(footer, " · ")
+}
+
+func withSiteFooter(embed *discordgo.MessageEmbed, extra string) *discordgo.MessageEmbed {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(extra) != "" {
+		parts = append(parts, strings.TrimSpace(extra))
 	}
+	parts = append(parts, siteFooterLabel)
+	embed.Footer = &discordgo.MessageEmbedFooter{Text: strings.Join(parts, " · ")}
 	return embed
 }
 
@@ -151,8 +166,16 @@ func linkButtonsForGuild(guildID string, track music.ResolvedTrack) []discordgo.
 		})
 	}
 
-	buttons = append(buttons, funFactButton(guildID))
+	buttons = append(buttons, funFactButton(guildID), siteButton())
 	return buttons
+}
+
+func siteButton() discordgo.Button {
+	return discordgo.Button{
+		Label: "Website",
+		Style: discordgo.LinkButton,
+		URL:   siteURL,
+	}
 }
 
 func funFactButton(guildID string) discordgo.Button {
@@ -262,10 +285,11 @@ func queuedEmbed(track music.ResolvedTrack, position int, requester string) *dis
 	if track.Thumbnail != "" {
 		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: track.Thumbnail}
 	}
+	extra := ""
 	if requester != "" {
-		embed.Footer = &discordgo.MessageEmbedFooter{Text: "Requested by " + requester}
+		extra = "Requested by " + requester
 	}
-	return embed
+	return withSiteFooter(embed, extra)
 }
 
 func queueListEmbed(snapshot music.QueueSnapshot) *discordgo.MessageEmbed {
@@ -301,12 +325,11 @@ func queueListEmbed(snapshot music.QueueSnapshot) *discordgo.MessageEmbed {
 	}
 
 	remaining := len(snapshot.Upcoming) - queueListPreviewLimit
+	extra := ""
 	if remaining > 0 {
-		embed.Footer = &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("+%d more", remaining),
-		}
+		extra = fmt.Sprintf("+%d more", remaining)
 	}
-	return embed
+	return withSiteFooter(embed, extra)
 }
 
 func queueTrackValue(title, artist string, durationSec int) string {
@@ -370,27 +393,27 @@ func queueEmptyDescription() string {
 }
 
 func joinSuccessEmbed() *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorVoice,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "VOICE"},
 		Description: "Joined your voice channel.",
-	}
+	}, "")
 }
 
 func leaveSuccessEmbed() *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorVoice,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "VOICE"},
 		Description: "Left the voice channel.",
-	}
+	}, "")
 }
 
 func statusEmbed(label, detail string, color int) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       color,
 		Author:      &discordgo.MessageEmbedAuthor{Name: strings.ToUpper(label)},
 		Description: detail,
-	}
+	}, "")
 }
 
 func playErrorEmbed(info music.PlaybackError) *discordgo.MessageEmbed {
@@ -402,24 +425,24 @@ func playErrorEmbed(info music.PlaybackError) *discordgo.MessageEmbed {
 	if description == "" {
 		description = "I couldn't load that one — it may be region-locked or removed. Try another link or search again with `/play`."
 	}
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorError,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "COULD NOT PLAY"},
 		Title:       title,
 		Description: description,
-	}
+	}, "")
 }
 
 func voiceErrorEmbed(detail string) *discordgo.MessageEmbed {
 	if detail == "" {
 		detail = "I couldn't join your voice channel — make sure I'm allowed to connect and speak."
 	}
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color:       colorError,
 		Author:      &discordgo.MessageEmbedAuthor{Name: "COULD NOT JOIN"},
 		Title:       "Voice unavailable",
 		Description: detail,
-	}
+	}, "")
 }
 
 func displaySongTitle(track music.ResolvedTrack) string {

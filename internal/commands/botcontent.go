@@ -70,10 +70,7 @@ func songFactEmbed(ctx context.Context, track music.ResolvedTrack, requester str
 		Author:      &discordgo.MessageEmbedAuthor{Name: "FUN FACT"},
 		Description: fact,
 	}
-	if subtitle := songFactSubtitle(track); subtitle != "" {
-		embed.Footer = &discordgo.MessageEmbedFooter{Text: subtitle}
-	}
-	return embed
+	return withSiteFooter(embed, songFactSubtitle(track))
 }
 
 func songFactSubtitle(track music.ResolvedTrack) string {

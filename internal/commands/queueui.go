@@ -20,7 +20,7 @@ func queueManageEmbed(snapshot music.QueueSnapshot) *discordgo.MessageEmbed {
 
 	if snapshot.Now == nil && len(snapshot.Upcoming) == 0 {
 		embed.Description = queueEmptyDescription()
-		return embed
+		return withSiteFooter(embed, "")
 	}
 
 	if snapshot.Now != nil {
@@ -43,16 +43,13 @@ func queueManageEmbed(snapshot music.QueueSnapshot) *discordgo.MessageEmbed {
 	}
 
 	remaining := len(snapshot.Upcoming) - queueManageLimit
+	extra := "Use the menus below to remove tracks or bump one to play next."
 	if remaining > 0 {
-		embed.Footer = &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("+%d more · use menus below for the first %d", remaining, queueManageLimit),
-		}
-	} else if len(snapshot.Upcoming) > 0 {
-		embed.Footer = &discordgo.MessageEmbedFooter{
-			Text: "Use the menus below to remove tracks or bump one to play next.",
-		}
+		extra = fmt.Sprintf("+%d more · use menus below for the first %d", remaining, queueManageLimit)
+	} else if len(snapshot.Upcoming) == 0 {
+		extra = ""
 	}
-	return embed
+	return withSiteFooter(embed, extra)
 }
 
 func queueManageComponents(guildID string, upcoming []music.QueueItem) []discordgo.MessageComponent {
@@ -134,14 +131,15 @@ func playlistQueuedEmbed(total int, requester string) *discordgo.MessageEmbed {
 		},
 		Description: fmt.Sprintf("Queued **%d tracks** from the playlist.", total),
 	}
+	extra := ""
 	if requester != "" {
-		embed.Footer = &discordgo.MessageEmbedFooter{Text: "Requested by " + requester}
+		extra = "Requested by " + requester
 	}
-	return embed
+	return withSiteFooter(embed, extra)
 }
 
 func loadingPlaylistEmbed(query string) *discordgo.MessageEmbed {
-	return &discordgo.MessageEmbed{
+	return withSiteFooter(&discordgo.MessageEmbed{
 		Color: colorLoading,
 		Author: &discordgo.MessageEmbedAuthor{
 			Name: "LOADING PLAYLIST",
@@ -151,5 +149,5 @@ func loadingPlaylistEmbed(query string) *discordgo.MessageEmbed {
 			formatLoadingQuery(query),
 			music.MaxPlaylistTracks,
 		),
-	}
+	}, "")
 }

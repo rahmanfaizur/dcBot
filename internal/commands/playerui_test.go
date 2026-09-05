@@ -51,8 +51,8 @@ func TestLoadingEmbed(t *testing.T) {
 	if !strings.Contains(embed.Description, "few seconds") {
 		t.Fatalf("should mention wait time: %q", embed.Description)
 	}
-	if embed.Footer != nil {
-		t.Fatalf("loading embed should not include footer trivia: %q", embed.Footer.Text)
+	if embed.Footer == nil || !strings.Contains(embed.Footer.Text, "music.frlabs.me") {
+		t.Fatalf("loading embed should include site footer")
 	}
 	if strings.ContainsAny(embed.Description, "▁▃▅▇") {
 		t.Fatalf("loader should be text-only: %q", embed.Description)
@@ -101,6 +101,9 @@ func TestSongFactEmbed(t *testing.T) {
 	}
 	if !strings.Contains(embed.Footer.Text, "ILLIT") {
 		t.Fatalf("footer: %q", embed.Footer.Text)
+	}
+	if !strings.Contains(embed.Footer.Text, "music.frlabs.me") {
+		t.Fatalf("footer should include site: %q", embed.Footer.Text)
 	}
 }
 

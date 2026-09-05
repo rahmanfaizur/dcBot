@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FR Music — chill Discord music</title>
+    <meta
+      name="description"
+      content="FR Music is a serene Discord music bot. Play YouTube, Spotify, and playlists in voice — with queue, vote skip, and fun facts."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Outfit:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="FR Music home">
+        <span class="brand-mark">FR</span>
+        <span class="brand-name">FR Music</span>
+      </a>
+      <nav class="topnav">
+        <a href="#commands">Commands</a>
+        <a href="#demo">Player</a>
+        <a class="nav-invite" id="invite-nav" href="#invite">Invite</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">FR Labs · Discord</p>
+          <h1 class="brand-hero">FR Music</h1>
+          <p class="lede">
+            Soft nights, shared voice channels, songs that just work.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary" id="invite-hero" href="#invite">Invite to Discord</a>
+            <a class="btn btn-ghost" href="#commands">See commands</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="glow glow-a"></div>
+          <div class="glow glow-b"></div>
+          <div class="vinyl">
+            <div class="vinyl-ring"></div>
+            <div class="vinyl-label">FR</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="commands" id="commands">
+        <div class="section-head">
+          <h2>Commands</h2>
+          <p>Everything you need in voice — calm, simple, one slash away.</p>
+        </div>
+        <ul class="command-list">
+          <li>
+            <code>/play</code>
+            <span>Search, YouTube, Spotify, or a whole playlist.</span>
+          </li>
+          <li>
+            <code>/nowplaying</code>
+            <span>Bring the player panel back to the bottom of chat.</span>
+          </li>
+          <li>
+            <code>/queue</code>
+            <span>See what’s next. Remove tracks or bump one to play next.</span>
+          </li>
+          <li>
+            <code>/skip</code>
+            <span>Skip now — or let the room Vote Skip together.</span>
+          </li>
+          <li>
+            <code>/pause</code> <code>/resume</code>
+            <span>Take a breath. Continue when you’re ready.</span>
+          </li>
+          <li>
+            <code>Fun Fact</code>
+            <span>A little trivia about the song that’s playing.</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="demo" id="demo">
+        <div class="section-head">
+          <h2>How it feels</h2>
+          <p>A preview of the player you’ll see in Discord — demo only.</p>
+        </div>
+
+        <article class="player-card" id="demo-player">
+          <div class="player-accent"></div>
+          <div class="player-body">
+            <p class="player-label" id="demo-label">Now playing</p>
+            <h3 class="player-title">Not Cute Anymore</h3>
+            <p class="player-artist">ILLIT</p>
+
+            <div class="album" aria-hidden="true">
+              <div class="album-art"></div>
+            </div>
+
+            <div class="progress" aria-hidden="true">
+              <div class="progress-track">
+                <div class="progress-fill" id="demo-fill"></div>
+                <div class="progress-dot" id="demo-dot"></div>
+              </div>
+              <div class="progress-times">
+                <span id="demo-current">0:42</span>
+                <span>3:33</span>
+              </div>
+            </div>
+
+            <p class="player-footer">Requested by Kaju · 3 in queue</p>
+
+            <div class="player-actions" aria-hidden="true">
+              <button type="button" class="chip chip-primary" id="demo-toggle">Pause</button>
+              <span class="chip">Skip</span>
+              <span class="chip">Queue</span>
+              <span class="chip chip-danger">Stop</span>
+            </div>
+            <div class="player-links" aria-hidden="true">
+              <span class="chip chip-link">YouTube</span>
+              <span class="chip chip-link">Spotify</span>
+              <span class="chip chip-link">Fun Fact</span>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="invite" id="invite">
+        <div class="invite-panel">
+          <h2>Bring FR Music to your server</h2>
+          <p>
+            Join a voice channel, type <code>/play</code>, and let the room settle into a playlist.
+          </p>
+          <a class="btn btn-primary" id="invite-main" href="#">Invite FR Music</a>
+          <p class="invite-note" id="invite-note">
+            Paste your Discord invite URL into <code>web/config.js</code> before going live.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>FR Music · music.frlabs.me</span>
+      <span>A calm Discord bot from FR Labs</span>
+    </footer>
+
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

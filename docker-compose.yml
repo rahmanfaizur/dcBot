@@ -68,5 +68,26 @@ services:
       linkdave:
         condition: service_healthy
 
+  # Public FR Music site — https://music.frlabs.me
+  # DNS: A record music.frlabs.me → VM public IP (Static recommended)
+  # Azure NSG must allow inbound 80 and 443.
+  #   docker compose --profile web up -d
+  web:
+    profiles: ["web"]
+    image: caddy:2-alpine
+    container_name: frmusic-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
 volumes:
   warp-data:
+  caddy-data:
+  caddy-config:
